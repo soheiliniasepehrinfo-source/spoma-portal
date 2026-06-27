@@ -244,7 +244,11 @@ optgroup{font-weight:700;}
   </div>
   <div class="card">
     <div class="fgroup"><label>Vollständiger Name</label><input type="text" id="ln" placeholder="z.B. Stefan Schmitt" autocomplete="username"></div>
-    <div class="fgroup"><label>Passwort <span style="font-size:10px;color:#aaa;text-transform:none;font-weight:400;">(1. Login = dein Name)</span></label><input type="password" id="lpw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="fgroup"><label>Passwort <span style="font-size:10px;color:#aaa;text-transform:none;font-weight:400;">(1. Login = dein Name)</span></label>
+<div style="position:relative;">
+  <input type="password" id="lpw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:38px!important;">
+  <button type="button" onclick="togglePw('lpw',this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none!important;background:none!important;padding:2px 4px!important;cursor:pointer;color:#6b7280;font-size:14px;">👁</button>
+</div></div>
     <div class="err-msg" id="lerr"></div>
     <button class="btn-primary" style="width:100%;padding:10px;margin-top:6px;" onclick="doLogin()">ANMELDEN →</button>
     <div style="text-align:center;margin-top:12px;">
@@ -270,6 +274,7 @@ optgroup{font-weight:700;}
         <option value="monteur">Monteur</option>
         <option value="azubi">Azubi</option>
         <option value="polier">Polier</option>
+        <option value="bauleiter">Bauleiter</option>
         <option value="mitarbeiter">Mitarbeiter</option>
         <option value="pl">Projektleiter</option>
       </select>
@@ -715,7 +720,7 @@ optgroup{font-weight:700;}
 // DATA STORE
 // ════════════════════════════════════════
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const RL={monteur:'Monteur',azubi:'Azubi',polier:'Polier',mitarbeiter:'Mitarbeiter',pl:'Projektleiter',admin:'Admin',admin_pl:'Admin+PL'};
+const RL={monteur:'Monteur',azubi:'Azubi',polier:'Polier',bauleiter:'Bauleiter',mitarbeiter:'Mitarbeiter',pl:'Projektleiter',admin:'Admin',admin_pl:'Admin+PL'};
 
 const BS_LIST=[
   {n:'Baustelle 1',k:'',b:''},{n:'Baustelle 2',k:'',b:''},{n:'Baustelle 3',k:'',b:''},
@@ -1533,9 +1538,9 @@ function buildAdmUsers(){
     tr.innerHTML=`
       <td><strong>${name}</strong></td>
       <td><span class="badge ${isAdm(u)?'b-ok':isPL(u)?'b-sent':'b-miss'}">${RL[u.role]||u.role}</span></td>
-      <td style="font-size:11px;">${u.nr||'–'}</td>
+      <td><input type="text" id="nr-${name.replace(/ /g,'_')}" value="${u.nr||''}" placeholder="Nr." style="width:60px;font-size:11px;padding:3px 5px;background:#fff!important;color:var(--text)!important;border:1px solid var(--border)!important;border-radius:3px;"></td>
       <td style="font-size:11px;">${u.pl||'–'}</td>
-      <td style="font-size:11px;color:var(--muted);font-family:monospace;">${canReset?u.pw:'••••••'}</td>
+      <td style="font-size:11px;color:var(--muted);font-family:monospace;">${canReset?u.pw||'(kein)':'••••••'}</td>
       <td>
         <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
           <select id="rs-${name.replace(/ /g,'_')}" style="width:110px;font-size:11px;padding:3px;background:#fff!important;color:var(--text)!important;border:1px solid var(--border)!important;">
@@ -1561,10 +1566,11 @@ async function admSaveUser(name){
   const newRole=roleEl.value;const newPL=plEl?.value||'';
   // Remove from old PL
   if(USERS[name].pl&&USERS[USERS[name].pl]){delete USERS[USERS[name].pl].members[name];}
-  USERS[name].role=newRole;USERS[name].pl=newPL||undefined;
+  const newNr=document.getElementById('nr-'+name.replace(/ /g,'_'))?.value.trim()||'';
+  USERS[name].role=newRole;USERS[name].pl=newPL||undefined;USERS[name].nr=newNr;
   if(newPL&&USERS[newPL]){if(!USERS[newPL].members)USERS[newPL].members={};USERS[newPL].members[name]=true;}
   if(['pl','admin_pl'].includes(newRole)){if(!USERS[name].members)USERS[name].members={};if(!USERS[name].own)USERS[name].own={};}
-  await fsSetUser(name,{role:newRole,pl:newPL||null});
+  await fsSetUser(name,{role:newRole,pl:newPL||null,nr:newNr});
   toast('✅ '+name+' aktualisiert.');
   buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
 }
@@ -1591,9 +1597,12 @@ async function admAddUser(){
   const r=document.getElementById('au-r').value,pl=document.getElementById('au-pl').value;
   if(!n){toast('Name erforderlich.','err');return;}
   if(USERS[n]){toast('Bereits registriert.','err');return;}
-  USERS[n]={pw:n,role:r,nr,status:{},locked:{}};
-  if(pl){USERS[n].pl=pl;if(USERS[pl])USERS[pl].members[n]=true;}
-  if(['pl','admin_pl','admin'].includes(r)){USERS[n].members={};USERS[n].own={};USERS[n].downloads=[];}
+  // Save to Firebase WITH pw
+  const userData={name:n,pw:n,role:r,nr:nr||'',pl:pl||null,createdAt:now()};
+  await fsSetUser(n,userData);
+  USERS[n]={...userData,status:{},locked:{}};
+  if(pl&&USERS[pl]){if(!USERS[pl].members)USERS[pl].members={};USERS[pl].members[n]=true;}
+  if(['pl','admin_pl','admin'].includes(r)){USERS[n].members={};USERS[n].own={};}
   toast('✅ '+n+' erstellt. Passwort = vollständiger Name.');
   document.getElementById('add-usr-form').style.display='none';
   buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
@@ -1835,6 +1844,14 @@ function exportAllExcel(){
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
+// Toggle password visibility
+function togglePw(inputId, btn){
+  const inp=document.getElementById(inputId);
+  if(!inp)return;
+  if(inp.type==='password'){inp.type='text';btn.textContent='🙈';}
+  else{inp.type='password';btn.textContent='👁';}
+}
+
 // Init Firebase
 const firebaseConfig={
   apiKey:"AIzaSyDh5cFolGPAQcrWBgDN3xYWZLqKV8P57Nw",
