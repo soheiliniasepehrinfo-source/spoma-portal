@@ -816,12 +816,14 @@ async function doLogin(){
   const n=document.getElementById('ln').value.trim();
   const pw=document.getElementById('lpw').value;
   const err=document.getElementById('lerr');
-  if(!isFirebaseReady()){err.textContent='Verbindung wird aufgebaut... Bitte erneut versuchen.';return;}
+  if(!isFirebaseReady()){err.textContent='Verbindung wird aufgebaut... Bitte nochmal klicken.';return;}
   err.textContent='Wird geladen...';
-  // Load all users from Firestore first
+  // Always seed admins first to make sure they exist
+  await seedAdmins();
+  // Then load all users
   await loadAllData();
   if(!USERS[n]){err.textContent='Benutzer nicht gefunden. Bitte registrieren.';return;}
-  if(USERS[n].pw!==pw){err.textContent='Falsches Passwort. Bei Vergessen: Sepehr oder Christin kontaktieren.';return;}
+  if(USERS[n].pw!==pw){err.textContent='Falsches Passwort.';return;}
   err.textContent='';CU=n;
   if(isAdm(USERS[n]))showAdmin();
   else if(isPL(USERS[n]))showPL();
@@ -1860,10 +1862,16 @@ async function seedAdmins(){
     {name:'Christin Frank',role:'admin',nr:'',pw:'Christin Frank'},
   ];
   for(const a of admins){
-    try{const d=await db.collection('users').doc(a.name).get();if(!d.exists)await db.collection('users').doc(a.name).set(a);}
-    catch(e){console.log('seed:',e);}
+    try{
+      const d=await db.collection('users').doc(a.name).get();
+      if(!d.exists){
+        await db.collection('users').doc(a.name).set(a);
+        console.log('Seeded:',a.name);
+      }
+    }catch(e){console.log('seed error:',e);}
   }
 }
+// Run on page load
 seedAdmins();
 </script>
 </body>
