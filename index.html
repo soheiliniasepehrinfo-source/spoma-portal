@@ -1720,7 +1720,7 @@ function buildFullViewHTML(sub){
     '<tr><th class="aus-hv" style="width:90px;">versteuert ✓</th><th class="aus-hs" style="width:90px;">steuerfrei €</th></tr>'+
     '</thead><tbody>';
     rows.forEach(r=>{
-      html+='<tr'+(r.locked?' class="locked"':'')'>'+
+      html+='<tr'+(r.locked?' class="locked"':'')+'>'+
         '<td class="daynum">'+r.day+'</td>'+
         '<td>'+(r.baustelle||'')+'</td>'+
         '<td style="color:var(--gold);font-weight:700;">'+(r.kst||'')+'</td>'+
@@ -1784,7 +1784,7 @@ function buildFullViewHTML(sub){
     '<tr><th>FZ h</th><th>Anw h</th><th>Ges h</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
-    html+='<tr'+(r.locked?' class="locked"':'')'>'+
+    html+='<tr'+(r.locked?' class="locked"':'')+'>'+
       '<td class="daynum">'+r.day+'</td>'+
       '<td class="check">'+(r.ost?'✓':'')+'</td>'+
       '<td class="check">'+(r.west?'✓':'')+'</td>'+
