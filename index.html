@@ -1324,31 +1324,33 @@ function buildPLDashboard(){
 }
 
 async function openPLDetail(name,month,e){
-  if(e)e.stopPropagation();curDetail=name;curMonth=month;
+  if(e)e.stopPropagation();
+  curDetail=name;curMonth=month;
   go('s-pl-detail');
-  document.getElementById('pld-name').textContent=name+' · '+curMonth;
-  document.getElementById('pld-badge').className='badge b-sent';document.getElementById('pld-badge').textContent='Wird geladen...';
+  document.getElementById('pld-name').textContent=name+' · '+month;
+  document.getElementById('pld-badge').className='badge b-sent';
+  document.getElementById('pld-badge').textContent='Wird geladen...';
+  document.getElementById('pld-stamp').innerHTML='';
   document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--muted);">Daten werden geladen...</div>';
-
-  // Load fresh from Firebase
-  const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
   try{
+    const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
     const doc=await db.collection('submissions').doc(docId).get();
-    const entry=doc.exists?doc.data():(USERS[name]?.status?.[month]||{st:'missing'});
+    const sub=doc.exists?doc.data():(USERS[name]?.status?.[month]||{st:'missing'});
     if(!USERS[name])USERS[name]={status:{}};
     if(!USERS[name].status)USERS[name].status={};
-    USERS[name].status[month]=entry;
-  const mu=USERS[name];const entry=mu.status[curMonth]||{st:'missing',stamp:'pending'};const st=entry.st||'missing';
-  document.getElementById('pld-name').textContent=name+' · '+curMonth+' · Tabelle '+(entry.tbl||'?');
-  document.getElementById('pld-badge').className='badge '+stB(st);document.getElementById('pld-badge').textContent=stL(st);
-  document.getElementById('pld-stamp').innerHTML=stampH(entry.stamp||st);
-  const trackHtml=buildTrackHtml(entry);
-  // Show actual submitted table data
-  const tableHtml=entry?.tableData?buildROTableWithData(entry):buildROTableHTML(curMonth);
-  document.getElementById('pld-content').innerHTML=`
-    ${trackHtml}
-    <div style="overflow-x:auto;margin-top:8px;">${tableHtml}</div>`;
-  go('s-pl-detail');
+    USERS[name].status[month]=sub;
+    const st=sub.st||'missing';
+    document.getElementById('pld-name').textContent=name+' · '+month+' · Tabelle '+(sub.tbl||'?');
+    document.getElementById('pld-badge').className='badge '+stB(st);
+    document.getElementById('pld-badge').textContent=stL(st);
+    document.getElementById('pld-stamp').innerHTML=stampH(sub.stamp||st);
+    const trackHtml=buildTrackHtml(sub);
+    const tableHtml=sub?.tableData?buildROTableWithData(sub):buildROTableHTML(month);
+    document.getElementById('pld-content').innerHTML=trackHtml+'<div style="overflow-x:auto;margin-top:8px;">'+tableHtml+'</div>';
+  }catch(err){
+    console.error('openPLDetail:',err);
+    document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler beim Laden.</div>';
+  }
 }
 
 function buildTrackHtml(entry){
