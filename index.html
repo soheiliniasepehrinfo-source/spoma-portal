@@ -1647,62 +1647,142 @@ function openAdminDetail(name,month){
 }
 
 function buildROTableWithData(submission){
-  // Render actual submitted data into read-only table
   const tbl=submission.tbl||1;
   const rows=submission.tableData||[];
-  if(!rows.length) return buildROTableHTML(submission.month||curMonth);
-  
+
   if(tbl===2){
-    let html=`<table class="t2" style="min-width:680px;"><thead>
+    // ── COMPLETE TABLE 2 VIEW ──
+    let tVst=0,tSfr=0;
+    const bsMap={};let totalDays=0;
+    rows.forEach(r=>{
+      if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){
+        if(!bsMap[r.baustelle])bsMap[r.baustelle]={kst:r.kst||'',days:0,aus:0};
+        bsMap[r.baustelle].days++;bsMap[r.baustelle].aus+=r.vst?18:0;totalDays++;
+      }
+      tVst+=r.vst?18:0;tSfr+=parseFloat(r.sfr)||0;
+    });
+
+    let html=`<div style="overflow-x:auto;">
+    <table class="t2" style="min-width:680px;">
+    <thead>
     <tr><th rowspan="2">Tag</th><th rowspan="2" style="min-width:160px;">Baustelle</th>
     <th rowspan="2" style="min-width:62px;">KST</th>
     <th rowspan="2" style="width:26px;">Url</th><th rowspan="2" style="width:26px;">Krank</th>
     <th rowspan="2" style="min-width:110px;">Besonderheiten</th>
     <th colspan="2" style="border-bottom:1px solid #555;">Auslöse je Arbeitstag</th></tr>
-    <tr><th class="aus-hv" style="width:78px;">versteuert ✓</th><th class="aus-hs" style="width:78px;">steuerfrei €</th></tr>
+    <tr><th class="aus-hv" style="width:90px;">versteuert ✓</th><th class="aus-hs" style="width:90px;">steuerfrei €</th></tr>
     </thead><tbody>`;
     rows.forEach(r=>{
-      const locked=r.locked;
-      html+=`<tr${locked?' class="locked"':''}>
+      html+=`<tr${r.locked?' class="locked"':''}>
         <td class="daynum">${r.day}</td>
-        <td>${r.baustelle||''}</td><td>${r.kst||''}</td>
+        <td>${r.baustelle||''}</td><td style="color:var(--gold);font-weight:700;">${r.kst||''}</td>
         <td class="check">${r.url?'✓':''}</td>
         <td class="check">${r.krank?'✓':''}</td>
         <td>${r.bem||''}</td>
-        <td style="background:#FFF8E7!important;text-align:center;">${r.vst?'✓ 18€':''}</td>
+        <td style="background:#FFF8E7!important;text-align:center;font-weight:600;">${r.vst?'✓ 18€':''}</td>
         <td>${r.sfr||''}</td></tr>`;
     });
-    html+=`</tbody></table>`;
+    html+=`</tbody>
+    <tfoot><tr>
+      <td colspan="6" style="text-align:right;font-size:10px;font-weight:400;">Summe</td>
+      <td style="font-weight:700;color:var(--err);">${tVst?tVst+' €':''}</td>
+      <td style="font-weight:700;">${tSfr?fmt(tSfr)+' €':''}</td>
+    </tr></tfoot>
+    </table></div>`;
+
+    // Mini cards
+    html+=`<div style="display:flex;gap:14px;margin-top:14px;flex-wrap:wrap;">
+      <div class="mini-card"><div class="ml">Auslöse versteuert</div><div class="mv">${fmt(tVst)} €</div></div>
+      <div class="mini-card"><div class="ml">Gesamt</div><div class="mv">${fmt(tVst+tSfr)} €</div></div>
+    </div>`;
+
+    // Zuordnung T2
+    html+=`<div style="margin-top:14px;" class="section-title">Zuordnung auf den Baustellen</div>
+    <div style="overflow-x:auto;"><table class="zt">
+    <thead><tr><th>Baustelle</th><th>KST Nr.</th><th class="c">Anteil %</th><th class="c">Auslöse €</th><th class="c">Kosten BSt. €</th></tr></thead>
+    <tbody>`;
+    Object.entries(bsMap).forEach(([bs,data])=>{
+      const ant=totalDays>0?((data.days/totalDays)*100):0;
+      html+=`<tr><td>${bs}</td><td class="kb">${data.kst}</td><td class="c">${fmt(ant)}%</td><td class="c">${fmt(data.aus)} €</td><td class="c" style="font-weight:700;">${fmt(data.aus)} €</td></tr>`;
+    });
+    html+=`</tbody><tfoot><tr>
+      <td colspan="2" style="text-align:right;font-size:10px;font-weight:400;">Summe:</td>
+      <td class="c">100,00%</td>
+      <td class="c">${fmt(tVst)} €</td>
+      <td class="c" style="font-weight:700;">${fmt(tVst)} €</td>
+    </tr></tfoot></table></div>`;
     return html;
   }
-  
-  // Table 1
-  let html=`<table class="t1" style="min-width:920px;"><thead>
+
+  // ── COMPLETE TABLE 1 VIEW ──
+  let tF=0,tA=0,tU=0,tK=0,tAus=0,tKm=0;
+  const bsMap={};
+  rows.forEach(r=>{
+    if(r.locked)return;
+    const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
+    tF+=fahr;tA+=anwes;tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tKm+=parseFloat(r.km)||0;
+    if(r.baustelle&&r.baustelle!=='Wochenende'){
+      if(!bsMap[r.baustelle])bsMap[r.baustelle]={kst:r.kst||'',an:0,fahr:0,aus:0};
+      bsMap[r.baustelle].an+=anwes;bsMap[r.baustelle].fahr+=fahr;bsMap[r.baustelle].aus+=r.aus?18:0;
+    }
+  });
+
+  let html=`<div style="overflow-x:auto;">
+  <table class="t1" style="min-width:920px;">
+  <thead>
   <tr><th rowspan="2">Tag</th>
   <th rowspan="2" style="width:20px;">OST</th><th rowspan="2" style="width:20px;">WEST</th><th rowspan="2" style="width:20px;">BLN</th>
   <th rowspan="2" style="min-width:155px;">Baustelle</th><th rowspan="2" style="min-width:62px;">KST</th>
-  <th rowspan="2" style="min-width:80px;font-size:9px;">Beginn/Ende</th>
+  <th rowspan="2" style="min-width:80px;font-size:9px;">Beginn/<br>Ende</th>
   <th colspan="3" style="border-bottom:1px solid #555;">Lohnstunden</th>
   <th rowspan="2" style="width:52px;font-size:9px;">FZ 50%</th>
   <th rowspan="2" style="width:26px;">Url</th><th rowspan="2" style="width:26px;">Krank</th>
-  <th rowspan="2" style="width:34px;font-size:9px;">Ausl.</th><th rowspan="2" style="width:50px;font-size:9px;">PKW km</th></tr>
+  <th rowspan="2" style="width:34px;font-size:9px;">Ausl.</th>
+  <th rowspan="2" style="width:50px;font-size:9px;">PKW km</th></tr>
   <tr><th>FZ h</th><th>Anw h</th><th>Ges h</th></tr>
   </thead><tbody>`;
+
   rows.forEach(r=>{
-    const locked=r.locked;
-    const fahr=parseFloat(r.fahr)||0, anwes=parseFloat(r.anwes)||0;
-    const ges=anwes?fmt(anwes):'', f50=fahr>0?fmt(fahr*0.5):'';
-    html+=`<tr${locked?' class="locked"':''}>
+    const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
+    const ges=anwes?fmt(anwes):'',f50=fahr>0?fmt(fahr*0.5):'';
+    html+=`<tr${r.locked?' class="locked"':''}>
       <td class="daynum">${r.day}</td>
       <td class="check">${r.ost?'✓':''}</td><td class="check">${r.west?'✓':''}</td><td class="check">${r.bln?'✓':''}</td>
-      <td>${r.baustelle||''}</td><td style="color:var(--gold);font-weight:700;">${r.kst||''}</td>
+      <td>${r.baustelle||''}</td>
+      <td style="color:var(--gold);font-weight:700;">${r.kst||''}</td>
       <td>${r.zeit||''}</td>
       <td class="num">${r.fahr||''}</td><td class="num">${r.anwes||''}</td>
       <td class="auto">${ges}</td><td class="auto-o">${f50}</td>
       <td class="check">${r.url?'✓':''}</td><td class="check">${r.krank?'✓':''}</td>
-      <td class="check">${r.aus?'18€':''}</td><td class="num">${r.km||''}</td></tr>`;
+      <td class="check" style="color:var(--ok);font-weight:700;">${r.aus?'18€':''}</td>
+      <td class="num">${r.km||''}</td></tr>`;
   });
-  html+=`</tbody></table>`;
+
+  html+=`</tbody>
+  <tfoot><tr>
+    <td colspan="7" style="text-align:right;font-size:10px;font-weight:400;">Summe</td>
+    <td>${tF?fmt(tF):''}</td><td>${tA?fmt(tA):''}</td><td>${tA?fmt(tA):''}</td>
+    <td>${tF>0?fmt(tF*0.5):''}</td><td>${tU||''}</td><td>${tK||''}</td>
+    <td>${tAus?tAus+'€':''}</td><td>${tKm||''}</td>
+  </tr></tfoot>
+  </table></div>`;
+
+  // Zuordnung T1
+  html+=`<div style="margin-top:14px;" class="section-title">Zuordnung auf den Baustellen</div>
+  <div class="bottom-tables">
+  <table class="zt">
+  <thead><tr><th>Baustelle</th><th>Kostenstelle</th><th class="c">Anwesenheit h</th><th class="c">Fahrzeit h</th><th class="c">Summe h</th><th class="c">Auslöse</th></tr></thead>
+  <tbody>`;
+  let totAn=0,totF=0,totAus=0;
+  Object.entries(bsMap).forEach(([bs,data])=>{
+    totAn+=data.an;totF+=data.fahr;totAus+=data.aus;
+    html+=`<tr><td>${bs}</td><td class="kb">${data.kst}</td><td class="c">${fmt(data.an)}</td><td class="c">${fmt(data.fahr)}</td><td class="c">${fmt(data.an+data.fahr)}</td><td class="c">${data.aus?fmt(data.aus)+' €':'0,00 €'}</td></tr>`;
+  });
+  html+=`</tbody>
+  <tfoot><tr><td colspan="2" style="text-align:right;font-size:10px;font-weight:400;">Summe gesamt</td>
+    <td>${fmt(totAn)}</td><td>${fmt(totF)}</td><td>${fmt(totAn+totF)}</td><td>${fmt(totAus)} €</td>
+  </tr></tfoot></table></div>`;
+
   return html;
 }
 
