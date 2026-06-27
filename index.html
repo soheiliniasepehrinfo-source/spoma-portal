@@ -1755,50 +1755,170 @@ function buildROTableHTML(month){
 // ════════════════════════════════════════
 // EXCEL EXPORT (Real .xlsx with SheetJS)
 // ════════════════════════════════════════
-function buildExcelData(name,month,tbl){
-  const entry=USERS[name]?.status?.[month]||{};
+function buildExcelT1(name,month,entry){
+  const td=entry?.tableData||[];
   const rows=[
     ['SPOMA Parkett und Ausbau GmbH'],
-    ['Monatsabrechnung — Tabelle '+(tbl||entry.tbl||'?')],
+    ['Monatsabrechnung — Tabelle 1 (Monteur, Azubi, etc.)'],
     [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','PL:',entry.pl||USERS[name]?.pl||''],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||''],
+    ['Tarifgebiet:',entry?.tarif||'','','','','','','','','','','','','',''],
     [],
-    ['Tag','OST','WEST','BLN','Baustelle','KST','Beginn/Ende','Fahrzeit h','Anwes. h','Gesamt h','FZ 50%','Urlaub','Krank','Auslöse','PKW km'],
+    // Header row
+    ['Tag','OST','WEST','BLN','Baustelle','Kostenstelle','Beginn/Ende','Fahrzeit h','Anwesenheit h','Gesamt h','Fahrzeit 50% Fahrer','Urlaub','Krank','Auslöse 18€','PKW km'],
   ];
-  for(let d=1;d<=31;d++)rows.push([d,'','','','','','','','','','','','','','']);
+  // Data rows from saved tableData
+  if(td.length){
+    td.forEach(r=>{
+      if(r.locked){
+        rows.push([r.day,'','','','Wochenende','','','','','','','','','','']);
+      } else {
+        const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
+        rows.push([
+          r.day,
+          r.ost?'X':'', r.west?'X':'', r.bln?'X':'',
+          r.baustelle||'', r.kst||'', r.zeit||'',
+          fahr||'', anwes||'', anwes||'',
+          fahr>0?(fahr*0.5).toFixed(2):'',
+          r.url?'X':'', r.krank?'X':'',
+          r.aus?'18 €':'', r.km||''
+        ]);
+      }
+    });
+  } else {
+    for(let d=1;d<=31;d++) rows.push([d,'','','','','','','','','','','','','','']);
+  }
+  // Summe row
+  const sumFahr=td.reduce((s,r)=>s+(parseFloat(r.fahr)||0),0);
+  const sumAnwes=td.reduce((s,r)=>s+(parseFloat(r.anwes)||0),0);
+  const sumUrl=td.reduce((s,r)=>s+(r.url?1:0),0);
+  const sumKrank=td.reduce((s,r)=>s+(r.krank?1:0),0);
+  const sumAus=td.reduce((s,r)=>s+(r.aus?18:0),0);
+  const sumKm=td.reduce((s,r)=>s+(parseFloat(r.km)||0),0);
+  rows.push(['Summe','','','','','','',(sumFahr||''),(sumAnwes||''),(sumAnwes||''),(sumFahr>0?(sumFahr*0.5).toFixed(2):''),(sumUrl||''),(sumKrank||''),(sumAus?sumAus+' €':''),(sumKm||'')]);
   rows.push([]);
-  rows.push(['Status:',stL(entry.st||'missing')]);
-  if(entry.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
-  if(entry.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-  if(entry.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-  if(entry.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+  // Zuordnung auf den Baustellen
+  rows.push(['ZUORDNUNG AUF DEN BAUSTELLEN']);
+  rows.push(['Baustelle','Kostenstelle','Anwesenheit h','Fahrzeit h','Summe h','Auslöse']);
+  const bsMap={};
+  td.forEach(r=>{
+    if(r.locked||!r.baustelle)return;
+    const bs=r.baustelle;
+    if(!bsMap[bs])bsMap[bs]={kst:r.kst||'',an:0,fahr:0,aus:0};
+    bsMap[bs].an+=parseFloat(r.anwes)||0;
+    bsMap[bs].fahr+=parseFloat(r.fahr)||0;
+    bsMap[bs].aus+=r.aus?18:0;
+  });
+  Object.entries(bsMap).forEach(([bs,data])=>{
+    rows.push([bs,data.kst,data.an.toFixed(2),data.fahr.toFixed(2),(data.an+data.fahr).toFixed(2),data.aus?data.aus+' €':'']);
+  });
+  rows.push([]);
+  // Tracking
+  rows.push(['STATUS & VERLAUF']);
+  rows.push(['Status:',stL(entry?.st||'missing')]);
+  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
+  if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
+  if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+  if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
   rows.push([]);
   rows.push(['Exportiert von:',CU,'am:',now()]);
   return rows;
 }
 
+function buildExcelT2(name,month,entry){
+  const td=entry?.tableData||[];
+  const rows=[
+    ['SPOMA Parkett und Ausbau GmbH'],
+    ['Monatsabrechnung — Tabelle 2 (Projektleiter, Bauleiter, etc.)'],
+    [],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||''],
+    [],
+    ['Tag','Baustelle','Kostenstelle','Urlaub','Krank','Besonderheiten','Auslöse versteuert (18€)','Auslöse steuerfrei €'],
+  ];
+  if(td.length){
+    td.forEach(r=>{
+      if(r.locked){
+        rows.push([r.day,'Wochenende','','','','','','']);
+      } else {
+        rows.push([r.day,r.baustelle||'',r.kst||'',r.url?'X':'',r.krank?'X':'',r.bem||'',r.vst?'18 €':'',r.sfr||'']);
+      }
+    });
+  } else {
+    for(let d=1;d<=31;d++) rows.push([d,'','','','','','','']);
+  }
+  // Summe
+  const sumVst=td.reduce((s,r)=>s+(r.vst?18:0),0);
+  const sumSfr=td.reduce((s,r)=>s+(parseFloat(r.sfr)||0),0);
+  rows.push(['Summe','','','','','',sumVst?sumVst+' €':'',sumSfr?sumSfr.toFixed(2)+' €':'']);
+  rows.push([]);
+  // Zuordnung
+  rows.push(['ZUORDNUNG AUF DEN BAUSTELLEN']);
+  rows.push(['Baustelle','KST Nr.','Anteil %','Auslöse €','Kosten BSt. €']);
+  const bsMap={};let totalDays=0;
+  td.forEach(r=>{if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){if(!bsMap[r.baustelle])bsMap[r.baustelle]={kst:r.kst||'',days:0,aus:0};bsMap[r.baustelle].days++;bsMap[r.baustelle].aus+=r.vst?18:0;totalDays++;}});
+  Object.entries(bsMap).forEach(([bs,data])=>{
+    const ant=totalDays>0?((data.days/totalDays)*100).toFixed(2)+'%':'0%';
+    rows.push([bs,data.kst,ant,data.aus?data.aus+' €':'',data.aus?data.aus+' €':'']);
+  });
+  rows.push([]);
+  rows.push(['Auslöse versteuert gesamt:',sumVst?sumVst+' €':'0 €']);
+  rows.push(['Gesamt:',((sumVst+sumSfr).toFixed(2))+' €']);
+  rows.push([]);
+  rows.push(['STATUS & VERLAUF']);
+  rows.push(['Status:',stL(entry?.st||'missing')]);
+  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
+  if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
+  if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+  rows.push([]);
+  rows.push(['Exportiert von:',CU,'am:',now()]);
+  return rows;
+}
+
+function buildExcelData(name,month,tbl){
+  const entry=USERS[name]?.status?.[month]||{};
+  const t=tbl||entry.tbl||1;
+  return t===2?buildExcelT2(name,month,entry):buildExcelT1(name,month,entry);
+}
+
 function doExcelDownload(name,month,tbl){
-  // Log the download
   const entry=USERS[name]?.status?.[month];
   if(entry){USERS[name].status[month]={...entry,downloadedBy:CU,downloadedAt:now()};}
   if(!USERS[CU].downloads)USERS[CU].downloads=[];
   USERS[CU].downloads.push({name,month,downloadedAt:now()});
-
-  const rows=buildExcelData(name,month,tbl);
+  const t=tbl||entry?.tbl||1;
+  const rows=t===2?buildExcelT2(name,month,entry||{}):buildExcelT1(name,month,entry||{});
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  // Style header rows
-  ws['!cols']=[{wch:8},{wch:5},{wch:6},{wch:6},{wch:20},{wch:10},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:7},{wch:7},{wch:8},{wch:8}];
+  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:10},{wch:12},{wch:16},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12},{wch:8},{wch:8},{wch:10},{wch:8}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
-  const filename=`SPOMA_${name.replace(/ /g,'_')}_${month.replace(/ /g,'_')}.xlsx`;
+  const filename=`SPOMA_${name.replace(/ /g,'_')}_${month.replace(/ /g,'_')}_T${t}.xlsx`;
   XLSX.writeFile(wb,filename);
   toast('⬇ Excel heruntergeladen: '+filename);
 }
 
 function exportPersonExcel(name,month){doExcelDownload(name,month,USERS[name]?.status?.[month]?.tbl||1);}
 function exportDetailExcel(){if(curDetail&&curMonth)doExcelDownload(curDetail,curMonth);}
-function exportExcelT1(){doExcelDownload(CU,curMonth,1);}
-function exportExcelT2(){doExcelDownload(CU,curMonth,2);}
+function exportExcelT1(){
+  // Read live data from current open T1 form
+  const liveEntry={tbl:1,tableData:gatherT1Data(),tarif:document.getElementById('t1-tarif')?.value||''};
+  const rows=buildExcelT1(CU,curMonth,liveEntry);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:10},{wch:12},{wch:16},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12},{wch:8},{wch:8},{wch:10},{wch:8}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
+  XLSX.writeFile(wb,`SPOMA_${CU.replace(/ /g,'_')}_${curMonth.replace(/ /g,'_')}_T1.xlsx`);
+  toast('⬇ Excel T1 heruntergeladen!');
+}
+function exportExcelT2(){
+  const liveEntry={tbl:2,tableData:gatherT2Data()};
+  const rows=buildExcelT2(CU,curMonth,liveEntry);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:8},{wch:8},{wch:18},{wch:16},{wch:16}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
+  XLSX.writeFile(wb,`SPOMA_${CU.replace(/ /g,'_')}_${curMonth.replace(/ /g,'_')}_T2.xlsx`);
+  toast('⬇ Excel T2 heruntergeladen!');
+}
 
 function exportPLExcel(plName){
   const pl=USERS[plName];const members=Object.keys(pl.members||{});
