@@ -1325,11 +1325,19 @@ function buildPLDashboard(){
 
 async function openPLDetail(name,month,e){
   if(e)e.stopPropagation();curDetail=name;curMonth=month;
-  // Reload this submission from Firestore to get latest data
+  go('s-pl-detail');
+  document.getElementById('pld-name').textContent=name+' · '+curMonth;
+  document.getElementById('pld-badge').className='badge b-sent';document.getElementById('pld-badge').textContent='Wird geladen...';
+  document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--muted);">Daten werden geladen...</div>';
+
+  // Load fresh from Firebase
   const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
-  try{const doc=await db.collection('submissions').doc(docId).get();
-    if(doc.exists&&USERS[name]){if(!USERS[name].status)USERS[name].status={};USERS[name].status[month]=doc.data();}
-  }catch(e2){console.error(e2);}
+  try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    const entry=doc.exists?doc.data():(USERS[name]?.status?.[month]||{st:'missing'});
+    if(!USERS[name])USERS[name]={status:{}};
+    if(!USERS[name].status)USERS[name].status={};
+    USERS[name].status[month]=entry;
   const mu=USERS[name];const entry=mu.status[curMonth]||{st:'missing',stamp:'pending'};const st=entry.st||'missing';
   document.getElementById('pld-name').textContent=name+' · '+curMonth+' · Tabelle '+(entry.tbl||'?');
   document.getElementById('pld-badge').className='badge '+stB(st);document.getElementById('pld-badge').textContent=stL(st);
@@ -1632,18 +1640,35 @@ function buildAdmArch(){
   if(!found)list.innerHTML='<div style="color:var(--muted);font-size:12px;padding:12px;text-align:center;">Noch keine Einreichungen im Archiv.</div>';
 }
 
-function openAdminDetail(name,month){
+async function openAdminDetail(name,month){
   prevScr='s-admin';curDetail=name;curMonth=month;
-  const mu=USERS[name];const entry=mu?.status?.[curMonth]||{st:'missing',stamp:'pending'};const st=entry.st||'missing';
-  document.getElementById('ad-name').textContent=name+' · '+curMonth+' · Tabelle '+(entry.tbl||'?');
-  document.getElementById('ad-badge').className='badge '+stB(st);document.getElementById('ad-badge').textContent=stL(st);
-  document.getElementById('ad-stamp').innerHTML=stampH(entry.stamp||st);
-  const trackLog=document.getElementById('ad-track-log');
-  const trackHtml=buildTrackHtml(entry);
-  if(trackHtml){trackLog.style.display='block';trackLog.innerHTML=trackHtml.replace('<div class="track-log">','').replace('</div>','');}
-  else trackLog.style.display='none';
-  document.getElementById('ad-content').innerHTML=`<div style="overflow-x:auto;">${buildROTableHTML(curMonth)}</div>`;
   go('s-admin-detail');
+  document.getElementById('ad-name').textContent=name+' · '+curMonth;
+  document.getElementById('ad-badge').className='badge b-sent';document.getElementById('ad-badge').textContent='Wird geladen...';
+  document.getElementById('ad-content').innerHTML='<div style="padding:20px;color:var(--muted);">Daten werden geladen...</div>';
+
+  // Load fresh from Firebase
+  try{
+    const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+    const doc=await db.collection('submissions').doc(docId).get();
+    const entry=doc.exists?doc.data():(USERS[name]?.status?.[month]||{st:'missing'});
+    if(!USERS[name])USERS[name]={status:{}};
+    if(!USERS[name].status)USERS[name].status={};
+    USERS[name].status[month]=entry;
+    const st=entry.st||'missing';
+    document.getElementById('ad-name').textContent=name+' · '+curMonth+' · Tabelle '+(entry.tbl||'?');
+    document.getElementById('ad-badge').className='badge '+stB(st);document.getElementById('ad-badge').textContent=stL(st);
+    document.getElementById('ad-stamp').innerHTML=stampH(entry.stamp||st);
+    const trackLog=document.getElementById('ad-track-log');
+    const trackHtml=buildTrackHtml(entry);
+    if(trackHtml){trackLog.style.display='block';trackLog.innerHTML=trackHtml.replace('<div class="track-log">','').replace('</div>','');}
+    else trackLog.style.display='none';
+    const tableHtml=entry?.tableData?buildROTableWithData(entry):buildROTableHTML(curMonth);
+    document.getElementById('ad-content').innerHTML=tableHtml;
+  }catch(e){
+    console.error('openAdminDetail:',e);
+    document.getElementById('ad-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler beim Laden.</div>';
+  }
 }
 
 function buildROTableWithData(submission){
