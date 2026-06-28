@@ -557,6 +557,29 @@ optgroup{font-weight:700;}
 </div>
 
 <!-- ════════════════════════════════════════
+     PERSON PROFILE — MONTH LIST
+════════════════════════════════════════ -->
+<div id="s-person-profile" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="pp-sub">Mitarbeiterprofil</div></div></div>
+  <div class="topbar-actions"><button onclick="go(prevProfileScr)">← Zurück</button></div>
+</div>
+<div class="content">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <div class="avatar av-ok" id="pp-avatar" style="width:48px;height:48px;font-size:14px;"></div>
+    <div>
+      <div style="font-weight:800;font-size:16px;" id="pp-name"></div>
+      <div style="font-size:12px;color:var(--muted);" id="pp-role"></div>
+    </div>
+  </div>
+  <div class="card gold-left">
+    <div class="section-title" style="margin-bottom:12px;">Alle Monatsabrechnungen</div>
+    <div id="pp-month-list"></div>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════
      PL DETAIL — REVIEW SUBMISSION
 ════════════════════════════════════════ -->
 <div id="s-pl-detail" class="screen">
@@ -781,7 +804,7 @@ async function loadPLData(plName){
 // ════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════
-let CU=null, curMonth='Juni 2026', curDetail=null, prevScr='s-login', selTable=0, selPL='', selCC='';
+let CU=null, curMonth='Juni 2026', curDetail=null, prevScr='s-login', prevProfileScr='s-pl', selTable=0, selPL='', selCC='';
 
 // ════════════════════════════════════════
 // HELPERS
@@ -1291,7 +1314,7 @@ function buildPLDashboard(){
     if(months.length===0){
       const tr=document.createElement('tr');
       tr.innerHTML=`
-        <td><div class="pname">${name}</div></td>
+        <td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div></td>
         <td><span class="badge b-miss" style="text-transform:none;">${RL[mu.role]||mu.role}</span></td>
         <td style="color:var(--muted);">${mu.nr||'–'}</td>
         <td style="color:var(--muted);">${filterMonth||'–'}</td>
@@ -1317,7 +1340,7 @@ function buildPLDashboard(){
       }
       btns.push(`<button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>`);
       tr.innerHTML=`
-        <td><div class="pname">${name}</div></td>
+        <td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div></td>
         <td><span class="badge b-miss" style="text-transform:none;">${RL[mu.role]||mu.role}</span></td>
         <td style="font-size:11px;color:var(--muted);">${mu.nr||'–'}</td>
         <td style="font-size:11px;">${month}</td>
@@ -1327,6 +1350,100 @@ function buildPLDashboard(){
       tbody.appendChild(tr);
     });
   });
+}
+
+// Open person profile with list of months
+async function openPersonProfile(name, fromScreen){
+  prevProfileScr = fromScreen || 's-pl';
+  curDetail = name;
+  go('s-person-profile');
+
+  const mu = USERS[name] || {};
+  document.getElementById('pp-sub').textContent = 'Mitarbeiterprofil — ' + name;
+  document.getElementById('pp-name').textContent = name;
+  document.getElementById('pp-role').textContent = (RL[mu.role]||mu.role||'') + (mu.nr ? ' · Nr. ' + mu.nr : '');
+  document.getElementById('pp-avatar').textContent = ini(name);
+
+  const list = document.getElementById('pp-month-list');
+  list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;">⏳ Wird geladen...</div>';
+
+  // Load all submissions for this person from Firebase
+  try{
+    const snap = await db.collection('submissions').where('employeeName','==',name).get();
+    const subs = {};
+    snap.forEach(d => { const sub = d.data(); if(sub.month) subs[sub.month] = sub; });
+    // Also merge with cached data
+    if(USERS[name] && USERS[name].status){
+      Object.keys(USERS[name].status).forEach(m => {
+        if(!subs[m]) subs[m] = USERS[name].status[m];
+      });
+    }
+    if(!USERS[name]) USERS[name] = {status:{}};
+    if(!USERS[name].status) USERS[name].status = {};
+    Object.keys(subs).forEach(m => { USERS[name].status[m] = subs[m]; });
+
+    list.innerHTML = '';
+    const months = Object.keys(subs).sort().reverse();
+    if(!months.length){
+      list.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:12px;">Noch keine Abrechnungen eingereicht.</div>';
+      return;
+    }
+    months.forEach(month => {
+      const sub = subs[month];
+      const st = sub.st || 'missing';
+      const row = document.createElement('div');
+      row.className = 'person-row clickable';
+      row.style.marginBottom = '8px';
+      row.innerHTML = `
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:13px;">${month}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Tabelle ${sub.tbl||'?'} · Eingereicht: ${sub.submittedAt||'–'}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${stampH(sub.stamp||st)}
+          <span class="badge ${stB(st)}">${stL(st)}</span>
+          <button class="btn-sm btn-primary" onclick="openSubmissionDetail('${name}','${month}')">👁 Öffnen</button>
+          <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>
+        </div>`;
+      list.appendChild(row);
+    });
+  } catch(e){
+    list.innerHTML = '<div style="color:var(--err);padding:12px;">Fehler: ' + e.message + '</div>';
+  }
+}
+
+// Open a specific month submission - works for PL, Admin, Christin Frank, Sepehr
+async function openSubmissionDetail(name, month){
+  curDetail = name; curMonth = month;
+  go('s-pl-detail');
+  document.getElementById('pld-name').textContent = name + ' · ' + month;
+  document.getElementById('pld-badge').className = 'badge b-sent';
+  document.getElementById('pld-badge').textContent = 'Wird geladen...';
+  document.getElementById('pld-stamp').innerHTML = '';
+  document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;">⏳ Daten werden geladen...</div>';
+  try{
+    const docId = name.replace(/ /g,'_') + '_' + month.replace(/ /g,'_');
+    const doc = await db.collection('submissions').doc(docId).get();
+    const sub = doc.exists ? doc.data() : null;
+    if(!sub){
+      document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--err);">Keine Abrechnung gefunden.</div>';
+      return;
+    }
+    if(!USERS[name]) USERS[name] = {status:{}};
+    if(!USERS[name].status) USERS[name].status = {};
+    USERS[name].status[month] = sub;
+    const st = sub.st || 'missing';
+    document.getElementById('pld-name').textContent = name + ' · ' + month + ' · Tabelle ' + (sub.tbl||'?');
+    document.getElementById('pld-badge').className = 'badge ' + stB(st);
+    document.getElementById('pld-badge').textContent = stL(st);
+    document.getElementById('pld-stamp').innerHTML = stampH(sub.stamp||st);
+    const trackHtml = buildTrackHtml(sub);
+    const tableHtml = buildFullViewHTML(sub);
+    document.getElementById('pld-content').innerHTML = trackHtml + tableHtml;
+  } catch(err){
+    console.error('openSubmissionDetail:', err);
+    document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--err);">Fehler: ' + err.message + '</div>';
+  }
 }
 
 async function openPLDetail(name,month,e){
@@ -1591,7 +1708,7 @@ function buildAdmPLView(){
     const mu=USERS[name];if(!mu)return;
     const months=Object.keys(mu.status||{});
     if(months.length===0){
-      html+=`<tr><td><div class="pname">${name}</div></td><td>${RL[mu.role]||mu.role}</td><td>${mu.nr||'–'}</td><td style="color:var(--muted);">–</td><td><span class="badge b-miss">Nicht eingereicht</span></td><td>–</td><td>–</td></tr>`;
+      html+=`<tr><td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${name}</div></td><td>${RL[mu.role]||mu.role}</td><td>${mu.nr||'–'}</td><td style="color:var(--muted);">–</td><td><span class="badge b-miss">Nicht eingereicht</span></td><td>–</td><td>–</td></tr>`;
       return;
     }
     months.forEach(month=>{
@@ -1604,7 +1721,7 @@ function buildAdmPLView(){
         <td>${stampH(entry.stamp||st)}<span class="badge ${stB(st)}">${stL(st)}</span></td>
         <td style="font-size:11px;color:var(--muted);">T${entry.tbl||'?'}</td>
         <td><div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button class="btn-sm btn-primary" onclick="openAdminDetail('${name}','${month}')">👁 Öffnen & Prüfen</button>
+          <button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-admin')">👁 Profil öffnen</button>
           <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>
         </div></td>
       </tr>`;
@@ -1707,7 +1824,7 @@ function buildAdmArch(){
         </div>
         <span class="badge ${stB(st)}">${stL(st)}</span>${stampH(entry.stamp||st)}
         <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button class="btn-sm btn-primary" onclick="openAdminDetail('${name}','${month}')">👁 Öffnen & Prüfen</button>
+          <button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-admin')">👁 Profil öffnen</button>
           <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>
         </div>`;
       list.appendChild(div);
