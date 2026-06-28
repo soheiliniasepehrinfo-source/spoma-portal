@@ -596,7 +596,7 @@ optgroup{font-weight:700;}
       <button class="btn-sm btn-dark" onclick="exportDetailExcel()">⬇ Excel (.xlsx)</button>
       <button class="btn-sm btn-warn" onclick="doUnlock()">🔓 Freigeben</button>
       <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
-      <button class="btn-sm btn-success" onclick="doApprove()">✓ Bestätigen & an Buchhaltung</button>
+      <button class="btn-sm btn-success" id="pld-confirm-btn" onclick="handleConfirm()">✓ Bestätigen</button>
     </div>
   </div>
   <div id="pld-content"></div>
@@ -1326,7 +1326,9 @@ function buildPLStats(){
 }
 
 function buildPLDashboard(){
-  const members=Object.keys(USERS[CU].members||{});
+  // Include PL himself + all his members
+  const memberSet=Object.keys(USERS[CU].members||{});
+  const members=[CU, ...memberSet.filter(m=>m!==CU)];
   const tbody=document.getElementById('pl-dash-tbody');tbody.innerHTML='';
   if(!members.length){
     tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">Noch keine Mitarbeiter.</td></tr>';
@@ -1548,42 +1550,65 @@ function buildTrackHtml(entry){
   html+='</div>';return html;
 }
 
+function handleConfirm(){
+  // If Admin or Christin Frank → Buchhaltung bestätigen (final)
+  // If PL → Bestätigen & an Buchhaltung senden
+  if(isAdm(USERS[CU])){
+    admConfirmForAccounting();
+  } else {
+    doApprove();
+  }
+}
+
 async function doApprove(){
-  // PL confirms → directly forwarded to Buchhaltung (Christin Frank)
-  const upd={
-    st:'forwarded',
-    stamp:'forwarded',
-    approvedBy:CU,
-    approvedAt:now(),
-    forwardedBy:CU,
-    forwardedAt:now()
-  };
+  const upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
-  await db.collection('submissions').doc(docId).set(upd,{merge:true});
-  if(!USERS[curDetail].status)USERS[curDetail].status={};
-  USERS[curDetail].status[curMonth]={...USERS[curDetail].status[curMonth],...upd};
-  toast('✅ Bestätigt & direkt an Buchhaltung (Christin Frank) gesendet!');
-  // Go back to appropriate screen
-  if(isAdm(USERS[CU]))go('s-admin');
-  else{go('s-pl');buildPLStats();buildPLDashboard();}
+  try{
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('✅ Bestätigt & an Buchhaltung gesendet!');
+    // Reload ALL data from Firebase → everyone sees updated status
+    await loadAllData();
+    // Rebuild views based on role
+    if(isAdm(USERS[CU])){
+      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
+      go('s-admin');
+    } else {
+      buildPLStats();buildPLDashboard();
+      go('s-pl');
+    }
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 async function doReject(){
   const upd={st:'rejected',stamp:'rejected',rejectedBy:CU,rejectedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
-  await db.collection('submissions').doc(docId).set(upd,{merge:true});
-  if(!USERS[curDetail].status)USERS[curDetail].status={};
-  USERS[curDetail].status[curMonth]={...USERS[curDetail].status[curMonth],...upd};
-  toast('Abgelehnt.','err');go('s-pl');buildPLStats();buildPLDashboard();
+  try{
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('Abgelehnt — Mitarbeiter kann neu einreichen.','err');
+    await loadAllData();
+    if(isAdm(USERS[CU])){
+      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
+      go('s-admin');
+    } else {
+      buildPLStats();buildPLDashboard();
+      go('s-pl');
+    }
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 async function doUnlock(){
   const upd={st:'unlocked',stamp:'pending',unlockedBy:CU,unlockedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
-  await db.collection('submissions').doc(docId).set(upd,{merge:true});
-  if(!USERS[curDetail].locked)USERS[curDetail].locked={};
-  USERS[curDetail].locked[curMonth]=true;
-  if(!USERS[curDetail].status)USERS[curDetail].status={};
-  USERS[curDetail].status[curMonth]={...USERS[curDetail].status[curMonth],...upd};
-  toast('🔓 '+curDetail+' kann jetzt bearbeiten.');go('s-pl');buildPLStats();buildPLDashboard();
+  try{
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('🔓 '+curDetail+' kann jetzt bearbeiten.');
+    await loadAllData();
+    if(isAdm(USERS[CU])){
+      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
+      go('s-admin');
+    } else {
+      buildPLStats();buildPLDashboard();
+      go('s-pl');
+    }
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
 async function sendToFrank(){
@@ -1789,7 +1814,9 @@ function buildAdmPLView(){
   const plName=document.getElementById('adm-pl-sel').value;
   const content=document.getElementById('adm-pl-view-content');
   if(!plName){content.innerHTML='';return;}
-  const pl=USERS[plName];const members=Object.keys(pl.members||{});
+  const pl=USERS[plName];
+  // Include PL himself + all his members
+  const members=[plName, ...Object.keys(pl.members||{}).filter(m=>m!==plName)];
   let html=`<div class="card gold-left">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div class="section-title" style="margin:0;">${plName} — Mitarbeiter Dashboard</div>
@@ -2191,13 +2218,13 @@ async function admConfirmForAccounting(){
   if(!curDetail||!curMonth)return;
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
-    const doc=await db.collection('submissions').doc(docId).get();
-    if(!doc.exists){toast('Keine Abrechnung in Firebase gefunden.','err');return;}
+    // Save confirmed status to Firebase
     const upd={st:'confirmed',stamp:'confirmed',confirmedBy:CU,confirmedAt:now()};
-    // Save to Firebase
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
-    toast('✅ Buchhaltung bestätigt!');
-    // Update current screen UI immediately
+    toast('✅ Buchhaltung bestätigt! Status für alle aktualisiert.');
+    // Reload ALL data from Firebase → ALL users see updated status
+    await loadAllData();
+    // Update badge immediately on current screen
     ['ad-badge','pld-badge'].forEach(id=>{
       const el=document.getElementById(id);
       if(el){el.className='badge b-dl';el.textContent='Buchhaltung bestätigt';}
@@ -2206,26 +2233,13 @@ async function admConfirmForAccounting(){
       const el=document.getElementById(id);
       if(el)el.innerHTML=stampH('confirmed');
     });
-    // Reload ALL data from Firebase fresh → updates every dashboard
-    await loadAllData();
-    // Rebuild all views
-    buildAdmArch();
+    // Rebuild ALL views
     buildAdmStats();
     buildAdmPLList();
     buildAdmPLView();
-    // If we came from person profile → reload it with fresh data
-    if(document.getElementById('s-person-profile')?.classList.contains('active')){
-      await openPersonProfile(curDetail, prevProfileScr);
-    }
-    // Also reload the current detail view to show updated status
-    if(document.getElementById('s-pl-detail')?.classList.contains('active')){
-      const badge=document.getElementById('pld-badge');
-      const stamp=document.getElementById('pld-stamp');
-      if(badge){badge.className='badge b-dl';badge.textContent='Buchhaltung bestätigt';}
-      if(stamp)stamp.innerHTML=stampH('confirmed');
-      // Reload the page content
-      await openSubmissionDetail(curDetail, curMonth);
-    }
+    buildAdmArch();
+    // Reload person profile if open
+    await openPersonProfile(curDetail, prevProfileScr||'s-admin');
   }catch(e){
     toast('Fehler: '+e.message,'err');
   }
