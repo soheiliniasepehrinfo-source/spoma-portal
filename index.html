@@ -730,6 +730,8 @@ optgroup{font-weight:700;}
     <div id="ad-stamp"></div>
     <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
       <button class="btn-sm btn-dark" onclick="exportDetailExcel()">⬇ Excel (.xlsx)</button>
+      <button class="btn-sm btn-warn" onclick="admEditSubmission()">✏ Bearbeiten</button>
+      <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
       <button class="btn-sm btn-success" onclick="admConfirmForAccounting()">✓ Buchhaltung bestätigt</button>
     </div>
   </div>
@@ -1065,7 +1067,8 @@ async function submitT1(){
   const pl=selPL||u.pl;
   const cc=document.getElementById('t1-cc')?.value||selCC;
   const subData={st:'submitted',stamp:'pending',pl,cc:cc||null,tbl:1,submittedAt:now(),employeeName:CU,month:curMonth,
-    tableData:gatherT1Data()};
+    tableData:gatherT1Data(),
+    signatures:gatherSignatures('t1')};
   // Save to Firestore
   const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
@@ -1074,6 +1077,25 @@ async function submitT1(){
   if(u.locked)delete u.locked[curMonth];
   toast('✅ Tabelle 1 für '+curMonth+' an '+pl+' eingereicht!');
   openT1();
+}
+
+function gatherSignatures(prefix){
+  // Collect signatures for Polier and Bauleiter
+  const sigs = {};
+  ['polier','bauleiter'].forEach(role => {
+    const id = prefix + '-' + role;
+    const dateEl = document.getElementById('d-' + id);
+    const typeEl = document.getElementById('st-' + id);
+    const canvas = document.getElementById('cv-' + id);
+    const drawDiv = document.getElementById('draw-' + id);
+    const isDrawMode = drawDiv && drawDiv.style.display !== 'none';
+    sigs[role] = {
+      datum: dateEl ? dateEl.value : '',
+      typed: typeEl ? typeEl.value : '',
+      drawn: (isDrawMode && canvas) ? canvas.toDataURL('image/png') : '',
+    };
+  });
+  return sigs;
 }
 
 function gatherT1Data(){
@@ -1191,7 +1213,8 @@ function updateT2Zuord(bsMap){
 async function submitT2(){
   const u=USERS[CU];const pl=selPL||u.pl;
   const subData={st:'submitted',stamp:'pending',pl,cc:selCC||null,tbl:2,submittedAt:now(),employeeName:CU,month:curMonth,
-    tableData:gatherT2Data()};
+    tableData:gatherT2Data(),
+    signatures:gatherSignatures('t2')};
   const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
   if(!u.status)u.status={};
@@ -1481,6 +1504,31 @@ async function openPLDetail(name,month,e){
 }
 
 
+function buildSigViewHTML(sub){
+  const sigs = sub.signatures || {};
+  if(!sigs.polier && !sigs.bauleiter) return '';
+  let html = `<div class="sig-section">
+    <div class="section-title">Unterschriften & Datum</div>
+    <div class="sig-row-s">`;
+  ['polier','bauleiter'].forEach(role => {
+    const s = sigs[role] || {};
+    if(!s.datum && !s.typed && !s.drawn) return;
+    html += `<div class="sig-box-s">
+      <div class="sl">Unterschrift ${role==='polier'?'Polier':'Bauleiter'}</div>
+      <div class="sd"><label>Datum:</label> <strong>${s.datum||'–'}</strong></div>`;
+    if(s.typed){
+      html += `<div style="font-family:'Brush Script MT',cursive;font-size:20px;font-style:italic;padding:8px 0;border-bottom:1px solid var(--border);">${s.typed}</div>`;
+    } else if(s.drawn && s.drawn.length > 100){
+      html += `<img src="${s.drawn}" style="max-width:100%;border:1px solid var(--border);border-radius:4px;display:block;" alt="Unterschrift">`;
+    } else {
+      html += `<div style="color:var(--muted);font-size:11px;padding:8px 0;">Keine Unterschrift</div>`;
+    }
+    html += `</div>`;
+  });
+  html += `</div></div>`;
+  return html;
+}
+
 function buildTrackHtml(entry){
   if(!entry||entry.st==='missing')return '';
   let html='<div class="track-log"><strong>Verlauf:</strong><br>';
@@ -1574,10 +1622,15 @@ async function showHistory(){
     const st=entry?.st||'missing';
     found=true;
     const canEdit=!entry||st==='rejected'||st==='unlocked';
+    const noTableData=entry&&(!entry.tableData||entry.tableData.length===0);
     const div=document.createElement('div');div.className='hist-item';
     let btns='';
     if(canEdit){
       btns+=`<button class="btn-sm btn-primary" onclick="reopenAndEdit('${month}',${entry?.tbl||1})">✏ ${entry?'Bearbeiten':'Ausfüllen'}</button>`;
+    } else if(noTableData){
+      // Old submission without full data - prompt to resubmit
+      btns+=`<button class="btn-sm btn-warn" onclick="reopenAndEdit('${month}',${entry?.tbl||1})">⚠ Neu einreichen</button>`;
+      btns+=`<button class="btn-sm" onclick="viewMySubmission('${month}')">👁 Ansehen</button>`;
     } else {
       btns+=`<button class="btn-sm" onclick="viewMySubmission('${month}')">👁 Ansehen</button>`;
     }
@@ -1976,7 +2029,7 @@ function buildFullViewHTML(sub){
       <td class="c">${fmt(tVst)} €</td>
       <td class="c" style="font-weight:700;">${fmt(tVst)} €</td>
     </tr></tfoot>
-    </table></div>`;
+    </table></div>` + buildSigViewHTML(sub);
   }
 
   // ── TABLE 1 ──
@@ -2072,12 +2125,26 @@ function buildFullViewHTML(sub){
     <td>${fmt(totAn)}</td><td>${fmt(totF)}</td>
     <td>${fmt(totAn+totF)}</td><td>${fmt(totAus)} €</td>
   </tr></tfoot>
-  </table></div>`;
+  </table></div>` + buildSigViewHTML(sub);
 }
 
 // Keep old name as alias for compatibility
 function buildROTableWithData(sub){return buildFullViewHTML(sub);}
 
+
+function admEditSubmission(){
+  // Sepehr or Christin Frank can open and edit any submission
+  if(!curDetail||!curMonth){toast('Kein Mitarbeiter ausgewählt.','err');return;}
+  const sub = USERS[curDetail]?.status?.[curMonth];
+  if(!sub){toast('Abrechnung nicht gefunden.','err');return;}
+  selTable = sub.tbl || 1;
+  selPL = sub.pl || '';
+  // Force unlock for editing
+  if(!USERS[curDetail].status)USERS[curDetail].status={};
+  USERS[curDetail].status[curMonth] = {...sub, st:'unlocked'};
+  // Open table with existing data
+  if(selTable===1) openT1(); else openT2();
+}
 
 async function admConfirmForAccounting(){
   if(!curDetail||!curMonth)return;
@@ -2203,6 +2270,14 @@ function buildExcelT1(name,month,entry){
   if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
   if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
   rows.push([]);
+  // SIGNATURES
+  rows.push(['UNTERSCHRIFTEN']);
+  rows.push(['','Polier','Bauleiter']);
+  const sigs1 = entry?.signatures || {};
+  rows.push(['Datum:', sigs1.polier?.datum||'–', sigs1.bauleiter?.datum||'–']);
+  rows.push(['Unterschrift (getippt):', sigs1.polier?.typed||'–', sigs1.bauleiter?.typed||'–']);
+  rows.push(['Unterschrift (gezeichnet):', sigs1.polier?.drawn?'[Unterschrift vorhanden]':'–', sigs1.bauleiter?.drawn?'[Unterschrift vorhanden]':'–']);
+  rows.push([]);
   rows.push(['Exportiert von:',CU,'am:',now()]);
   return rows;
 }
@@ -2251,6 +2326,14 @@ function buildExcelT2(name,month,entry){
   if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
   if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
   if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+  rows.push([]);
+  // SIGNATURES
+  rows.push(['UNTERSCHRIFTEN']);
+  rows.push(['','Polier','Bauleiter']);
+  const sigs2 = entry?.signatures || {};
+  rows.push(['Datum:', sigs2.polier?.datum||'–', sigs2.bauleiter?.datum||'–']);
+  rows.push(['Unterschrift (getippt):', sigs2.polier?.typed||'–', sigs2.bauleiter?.typed||'–']);
+  rows.push(['Unterschrift (gezeichnet):', sigs2.polier?.drawn?'[Unterschrift vorhanden]':'–', sigs2.bauleiter?.drawn?'[Unterschrift vorhanden]':'–']);
   rows.push([]);
   rows.push(['Exportiert von:',CU,'am:',now()]);
   return rows;
