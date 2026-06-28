@@ -571,6 +571,7 @@ optgroup{font-weight:700;}
       <div style="font-size:12px;color:var(--muted);" id="pp-role"></div>
     </div>
   </div>
+  <div id="pp-profile-actions" style="margin-bottom:10px;"></div>
   <div class="card gold-left">
     <div class="section-title" style="margin-bottom:12px;">Alle Monatsabrechnungen</div>
     <div id="pp-month-list"></div>
@@ -1380,6 +1381,19 @@ async function openPersonProfile(name, fromScreen){
   document.getElementById('pp-role').textContent = (RL[mu.role]||mu.role||'') + (mu.nr ? ' · Nr. ' + mu.nr : '');
   document.getElementById('pp-avatar').textContent = ini(name);
 
+  // Show remove button only for Admins
+  const profileActions = document.getElementById('pp-profile-actions');
+  if(profileActions){
+    if(isAdm(USERS[CU]) && mu.pl){
+      profileActions.innerHTML = `
+        <button class="btn-sm btn-danger" onclick="removeFromPL('${name}','${mu.pl||''}')">
+          ✕ Aus PL-Liste entfernen
+        </button>`;
+    } else {
+      profileActions.innerHTML = '';
+    }
+  }
+
   const list = document.getElementById('pp-month-list');
   list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px;">⏳ Wird geladen...</div>';
 
@@ -1642,6 +1656,41 @@ function reopenAndEdit(month,tbl){
   curMonth=month;selTable=tbl||1;selPL=USERS[CU]?.pl||'';
   if(USERS[CU]?.status?.[month]){USERS[CU].status[month].st='unlocked';}
   if(selTable===1)openT1();else openT2();
+}
+
+async function removeFromPL(name, plName){
+  if(!isAdm(USERS[CU])){
+    toast('Nur Admins können Mitarbeiter aus PL-Listen entfernen.','err');
+    return;
+  }
+  if(!confirm(`Sicher? "${name}" wird aus der Liste von "${plName}" entfernt.
+
+Der Benutzer bleibt im System — nur die PL-Zuweisung wird entfernt.`)){
+    return;
+  }
+  try{
+    // Remove PL assignment from user in Firebase
+    await fsSetUser(name, {pl: null});
+    USERS[name].pl = null;
+    // Remove from PL's members
+    if(USERS[plName] && USERS[plName].members){
+      delete USERS[plName].members[name];
+    }
+    toast('✅ '+name+' wurde aus der Liste von '+plName+' entfernt.');
+    // Go back to previous screen
+    go(prevProfileScr);
+    // Refresh views
+    if(isAdm(USERS[CU])){
+      buildAdmStats();
+      buildAdmPLList();
+      buildAdmPLView();
+    } else {
+      buildPLStats();
+      buildPLDashboard();
+    }
+  }catch(e){
+    toast('Fehler: '+e.message,'err');
+  }
 }
 
 async function viewMySubmission(month){
@@ -2147,12 +2196,8 @@ async function admConfirmForAccounting(){
     const upd={st:'confirmed',stamp:'confirmed',confirmedBy:CU,confirmedAt:now()};
     // Save to Firebase
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
-    // Update ALL local caches
-    if(!USERS[curDetail])USERS[curDetail]={status:{}};
-    if(!USERS[curDetail].status)USERS[curDetail].status={};
-    USERS[curDetail].status[curMonth]={...doc.data(),...upd};
-    toast('✅ Buchhaltung bestätigt! Status für alle sichtbar aktualisiert.');
-    // Update current screen UI
+    toast('✅ Buchhaltung bestätigt!');
+    // Update current screen UI immediately
     ['ad-badge','pld-badge'].forEach(id=>{
       const el=document.getElementById(id);
       if(el){el.className='badge b-dl';el.textContent='Buchhaltung bestätigt';}
@@ -2161,10 +2206,13 @@ async function admConfirmForAccounting(){
       const el=document.getElementById(id);
       if(el)el.innerHTML=stampH('confirmed');
     });
-    // Rebuild all relevant views
+    // Reload ALL data from Firebase fresh → updates every dashboard
+    await loadAllData();
+    // Rebuild all views
     buildAdmArch();
     buildAdmStats();
     buildAdmPLList();
+    buildAdmPLView();
   }catch(e){
     toast('Fehler: '+e.message,'err');
   }
