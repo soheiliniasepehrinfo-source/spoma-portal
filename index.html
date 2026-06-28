@@ -538,8 +538,7 @@ optgroup{font-weight:700;}
     <div style="overflow-x:auto;">
     <table class="dash">
       <thead><tr>
-        <th>Mitarbeiter</th><th>Rolle</th><th>Nr.</th><th>Monat</th>
-        <th>Status</th><th>Tabelle</th><th>Aktionen</th>
+        <th>Mitarbeiter</th><th>Abrechnungen</th><th>Status</th><th>Aktionen</th>
       </tr></thead>
       <tbody id="pl-dash-tbody"></tbody>
     </table>
@@ -1327,51 +1326,45 @@ function buildPLStats(){
 
 function buildPLDashboard(){
   const members=Object.keys(USERS[CU].members||{});
-  const filterMonth=document.getElementById('pl-filter-month')?.value||'';
   const tbody=document.getElementById('pl-dash-tbody');tbody.innerHTML='';
-  if(!members.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px;">Noch keine Mitarbeiter.</td></tr>';return;}
+  if(!members.length){
+    tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">Noch keine Mitarbeiter.</td></tr>';
+    return;
+  }
+  // ONE ROW PER PERSON — show latest status summary
   members.forEach(name=>{
     const mu=USERS[name];if(!mu)return;
-    const months=Object.keys(mu.status||{}).filter(m=>!filterMonth||m===filterMonth);
-    // Show at least one row per member (even if no submissions)
-    if(months.length===0){
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div></td>
-        <td><span class="badge b-miss" style="text-transform:none;">${RL[mu.role]||mu.role}</span></td>
-        <td style="color:var(--muted);">${mu.nr||'–'}</td>
-        <td style="color:var(--muted);">${filterMonth||'–'}</td>
-        <td><span class="badge b-miss">Nicht eingereicht</span></td>
-        <td style="color:var(--muted);">–</td>
-        <td><span style="font-size:11px;color:var(--muted);">Keine Einreichung</span></td>`;
-      tbody.appendChild(tr);
-      return;
+    const allMonths=Object.keys(mu.status||{});
+    // Get overall status summary
+    let latestStatus='missing';
+    let latestMonth='–';
+    let totalCount=allMonths.length;
+    if(allMonths.length>0){
+      // Find most recent month with active status
+      const sorted=allMonths.sort().reverse();
+      latestMonth=sorted[0];
+      latestStatus=mu.status[latestMonth]?.st||'missing';
     }
-    months.forEach(month=>{
-      const entry=mu.status[month];const st=entry.st||entry;
-      const tr=document.createElement('tr');
-      const btns=[];
-      // Always show Öffnen button for any submitted status
-      if(st==='submitted'){
-        btns.push(`<button class="btn-sm btn-primary" onclick="openPLDetail('${name}','${month}',event)">👁 Öffnen & Prüfen</button>`);
-      } else if(st==='rejected'){
-        btns.push(`<button class="btn-sm btn-danger" onclick="openPLDetail('${name}','${month}',event)">👁 Öffnen</button>`);
-      } else if(st==='forwarded'||st==='confirmed'){
-        btns.push(`<button class="btn-sm btn-success" onclick="openPLDetail('${name}','${month}',event)">👁 Ansehen</button>`);
-      } else if(st!=='missing'){
-        btns.push(`<button class="btn-sm" onclick="openPLDetail('${name}','${month}',event)">👁 Öffnen</button>`);
-      }
-      btns.push(`<button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>`);
-      tr.innerHTML=`
-        <td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div></td>
-        <td><span class="badge b-miss" style="text-transform:none;">${RL[mu.role]||mu.role}</span></td>
-        <td style="font-size:11px;color:var(--muted);">${mu.nr||'–'}</td>
-        <td style="font-size:11px;">${month}</td>
-        <td>${stampH(entry.stamp||st)} <span class="badge ${stB(st)}">${stL(st)}</span></td>
-        <td><span style="font-size:11px;color:var(--muted);">Tabelle ${entry.tbl||'?'}</span></td>
-        <td><div style="display:flex;gap:4px;flex-wrap:wrap;">${btns.join('')}</div></td>`;
-      tbody.appendChild(tr);
-    });
+    // Count by status
+    let pendingCount=allMonths.filter(m=>(mu.status[m]?.st||'missing')==='submitted').length;
+    let approvedCount=allMonths.filter(m=>['forwarded','confirmed'].includes(mu.status[m]?.st||'')).length;
+    const tr=document.createElement('tr');
+    let statusHtml='';
+    if(pendingCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">${pendingCount} ausstehend</span>`;
+    if(approvedCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">${approvedCount} bestätigt</span>`;
+    if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
+    tr.innerHTML=`
+      <td>
+        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div>
+        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
+      </td>
+      <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
+      <td>${statusHtml}</td>
+      <td>
+        <button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-pl')">👁 Profil öffnen</button>
+        <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${latestMonth}')">⬇ Excel</button>
+      </td>`;
+    tbody.appendChild(tr);
   });
 }
 
@@ -1755,30 +1748,29 @@ function buildAdmPLView(){
     </div>
     <div style="overflow-x:auto;">
     <table class="dash"><thead><tr>
-      <th>Mitarbeiter</th><th>Rolle</th><th>Nr.</th><th>Monat</th><th>Status</th><th>Tabelle</th><th>Aktionen</th>
+      <th>Mitarbeiter</th><th>Abrechnungen</th><th>Status</th><th>Aktionen</th>
     </tr></thead><tbody>`;
   members.forEach(name=>{
     const mu=USERS[name];if(!mu)return;
-    const months=Object.keys(mu.status||{});
-    if(months.length===0){
-      html+=`<tr><td><div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${name}</div></td><td>${RL[mu.role]||mu.role}</td><td>${mu.nr||'–'}</td><td style="color:var(--muted);">–</td><td><span class="badge b-miss">Nicht eingereicht</span></td><td>–</td><td>–</td></tr>`;
-      return;
-    }
-    months.forEach(month=>{
-      const entry=mu.status[month];const st=entry.st||entry;
-      html+=`<tr>
-        <td><div class="pname">${name}</div></td>
-        <td style="font-size:11px;">${RL[mu.role]||mu.role}</td>
-        <td style="font-size:11px;color:var(--muted);">${mu.nr||'–'}</td>
-        <td style="font-size:11px;">${month}</td>
-        <td>${stampH(entry.stamp||st)}<span class="badge ${stB(st)}">${stL(st)}</span></td>
-        <td style="font-size:11px;color:var(--muted);">T${entry.tbl||'?'}</td>
-        <td><div style="display:flex;gap:4px;flex-wrap:wrap;">
-          <button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-admin')">👁 Profil öffnen</button>
-          <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>
-        </div></td>
-      </tr>`;
-    });
+    const allMonths=Object.keys(mu.status||{});
+    const totalCount=allMonths.length;
+    let pendingCount=allMonths.filter(m=>(mu.status[m]?.st||'missing')==='submitted').length;
+    let fwdCount=allMonths.filter(m=>['forwarded','confirmed'].includes(mu.status[m]?.st||'')).length;
+    let rejCount=allMonths.filter(m=>(mu.status[m]?.st||'missing')==='rejected').length;
+    let statusHtml='';
+    if(pendingCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">${pendingCount} ausstehend</span>`;
+    if(fwdCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">${fwdCount} bestätigt</span>`;
+    if(rejCount>0) statusHtml+=`<span class="badge b-rej" style="margin:2px;">${rejCount} abgelehnt</span>`;
+    if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
+    html+=`<tr>
+      <td>
+        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${name}</div>
+        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
+      </td>
+      <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
+      <td>${statusHtml}</td>
+      <td><button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-admin')">👁 Profil öffnen</button></td>
+    </tr>`;
   });
   html+='</tbody></table></div></div>';
   content.innerHTML=html;
@@ -2148,24 +2140,31 @@ function admEditSubmission(){
 
 async function admConfirmForAccounting(){
   if(!curDetail||!curMonth)return;
-  // Load fresh from Firebase
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     const doc=await db.collection('submissions').doc(docId).get();
     if(!doc.exists){toast('Keine Abrechnung in Firebase gefunden.','err');return;}
     const upd={st:'confirmed',stamp:'confirmed',confirmedBy:CU,confirmedAt:now()};
+    // Save to Firebase
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    // Update ALL local caches
     if(!USERS[curDetail])USERS[curDetail]={status:{}};
     if(!USERS[curDetail].status)USERS[curDetail].status={};
     USERS[curDetail].status[curMonth]={...doc.data(),...upd};
-    toast('✅ Buchhaltung bestätigt!');
-    // Update UI
-    const badge=document.getElementById('ad-badge')||document.getElementById('pld-badge');
-    const stamp=document.getElementById('ad-stamp')||document.getElementById('pld-stamp');
-    if(badge){badge.className='badge b-dl';badge.textContent='Buchhaltung bestätigt';}
-    if(stamp)stamp.innerHTML=stampH('confirmed');
-    // Refresh admin view
-    if(isAdm(USERS[CU]))buildAdmArch();
+    toast('✅ Buchhaltung bestätigt! Status für alle sichtbar aktualisiert.');
+    // Update current screen UI
+    ['ad-badge','pld-badge'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el){el.className='badge b-dl';el.textContent='Buchhaltung bestätigt';}
+    });
+    ['ad-stamp','pld-stamp'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el)el.innerHTML=stampH('confirmed');
+    });
+    // Rebuild all relevant views
+    buildAdmArch();
+    buildAdmStats();
+    buildAdmPLList();
   }catch(e){
     toast('Fehler: '+e.message,'err');
   }
@@ -2271,12 +2270,13 @@ function buildExcelT1(name,month,entry){
   if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
   rows.push([]);
   // SIGNATURES
-  rows.push(['UNTERSCHRIFTEN']);
-  rows.push(['','Polier','Bauleiter']);
   const sigs1 = entry?.signatures || {};
+  rows.push(['UNTERSCHRIFTEN & DATUM']);
+  rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
   rows.push(['Datum:', sigs1.polier?.datum||'–', sigs1.bauleiter?.datum||'–']);
-  rows.push(['Unterschrift (getippt):', sigs1.polier?.typed||'–', sigs1.bauleiter?.typed||'–']);
-  rows.push(['Unterschrift (gezeichnet):', sigs1.polier?.drawn?'[Unterschrift vorhanden]':'–', sigs1.bauleiter?.drawn?'[Unterschrift vorhanden]':'–']);
+  rows.push(['Name (getippt):', sigs1.polier?.typed||'–', sigs1.bauleiter?.typed||'–']);
+  rows.push(['Handunterschrift:', sigs1.polier?.drawn&&sigs1.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
+    sigs1.bauleiter?.drawn&&sigs1.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
   rows.push([]);
   rows.push(['Exportiert von:',CU,'am:',now()]);
   return rows;
@@ -2328,12 +2328,13 @@ function buildExcelT2(name,month,entry){
   if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
   rows.push([]);
   // SIGNATURES
-  rows.push(['UNTERSCHRIFTEN']);
-  rows.push(['','Polier','Bauleiter']);
   const sigs2 = entry?.signatures || {};
+  rows.push(['UNTERSCHRIFTEN & DATUM']);
+  rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
   rows.push(['Datum:', sigs2.polier?.datum||'–', sigs2.bauleiter?.datum||'–']);
-  rows.push(['Unterschrift (getippt):', sigs2.polier?.typed||'–', sigs2.bauleiter?.typed||'–']);
-  rows.push(['Unterschrift (gezeichnet):', sigs2.polier?.drawn?'[Unterschrift vorhanden]':'–', sigs2.bauleiter?.drawn?'[Unterschrift vorhanden]':'–']);
+  rows.push(['Name (getippt):', sigs2.polier?.typed||'–', sigs2.bauleiter?.typed||'–']);
+  rows.push(['Handunterschrift:', sigs2.polier?.drawn&&sigs2.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
+    sigs2.bauleiter?.drawn&&sigs2.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
   rows.push([]);
   rows.push(['Exportiert von:',CU,'am:',now()]);
   return rows;
