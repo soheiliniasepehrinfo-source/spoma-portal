@@ -2213,6 +2213,19 @@ async function admConfirmForAccounting(){
     buildAdmStats();
     buildAdmPLList();
     buildAdmPLView();
+    // If we came from person profile → reload it with fresh data
+    if(document.getElementById('s-person-profile')?.classList.contains('active')){
+      await openPersonProfile(curDetail, prevProfileScr);
+    }
+    // Also reload the current detail view to show updated status
+    if(document.getElementById('s-pl-detail')?.classList.contains('active')){
+      const badge=document.getElementById('pld-badge');
+      const stamp=document.getElementById('pld-stamp');
+      if(badge){badge.className='badge b-dl';badge.textContent='Buchhaltung bestätigt';}
+      if(stamp)stamp.innerHTML=stampH('confirmed');
+      // Reload the page content
+      await openSubmissionDetail(curDetail, curMonth);
+    }
   }catch(e){
     toast('Fehler: '+e.message,'err');
   }
