@@ -746,6 +746,22 @@ optgroup{font-weight:700;}
 // DATA STORE
 // ════════════════════════════════════════
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+// Dynamic month list for current and next year
+function getMonthOptions(){
+  const now=new Date();
+  const months=[];
+  // Show last 2 months, current month, and next 2 months
+  for(let i=-2;i<=2;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+    months.push(MONTHS[d.getMonth()]+' '+d.getFullYear());
+  }
+  return months;
+}
+// Current month default
+function currentMonthYear(){
+  const now=new Date();
+  return MONTHS[now.getMonth()]+' '+now.getFullYear();
+}
 const RL={monteur:'Monteur',azubi:'Azubi',polier:'Polier',bauleiter:'Bauleiter',mitarbeiter:'Mitarbeiter',pl:'Projektleiter',admin:'Admin',admin_pl:'Admin+PL'};
 
 const BS_LIST=[
@@ -763,13 +779,13 @@ let SUBMISSIONS = {};
 
 async function loadAllData(){
   USERS = await fsGetAllUsers();
-  // Load members for each PL
+  // Initialize status and members
   Object.keys(USERS).forEach(name=>{
     const u=USERS[name];
     if(!u.status)u.status={};
     if(isPL(u)&&!u.members)u.members={};
   });
-  // Build members map
+  // Build members map (primary PL)
   Object.keys(USERS).forEach(name=>{
     const u=USERS[name];
     if(u.pl&&USERS[u.pl]){
@@ -777,13 +793,23 @@ async function loadAllData(){
       USERS[u.pl].members[name]=true;
     }
   });
-  // Load all submissions and map into USERS.status
+  // Load all submissions
   const snap=await db.collection('submissions').get();
   snap.forEach(d=>{
-    const sub=d.data();const name=sub.employeeName;const month=sub.month;
+    const sub=d.data();
+    const name=sub.employeeName;const month=sub.month;
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
+    // Also add to CC-PL's members list
+    if(sub.cc&&USERS[sub.cc]){
+      if(!USERS[sub.cc].members)USERS[sub.cc].members={};
+      USERS[sub.cc].members[name]=true;
+      // CC submissions stored separately
+      if(!USERS[sub.cc].ccSubmissions)USERS[sub.cc].ccSubmissions={};
+      if(!USERS[sub.cc].ccSubmissions[name])USERS[sub.cc].ccSubmissions[name]={};
+      USERS[sub.cc].ccSubmissions[name][month]=sub;
+    }
   });
 }
 
@@ -807,7 +833,7 @@ async function loadPLData(plName){
 // ════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════
-let CU=null, curMonth='Juni 2026', curDetail=null, prevScr='s-login', prevProfileScr='s-pl', selTable=0, selPL='', selCC='';
+let CU=null, curMonth=currentMonthYear(), curDetail=null, prevScr='s-login', prevProfileScr='s-pl', selTable=0, selPL='', selCC='';
 
 // ════════════════════════════════════════
 // HELPERS
@@ -820,8 +846,18 @@ function isAdm(u){return u&&['admin','admin_pl'].includes(u.role);}
 function isPL(u){return u&&['pl','admin_pl'].includes(u.role);}
 function getPLs(){return Object.keys(USERS).filter(k=>isPL(USERS[k]));}
 function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank';}
-function stL(s){return{missing:'Nicht eingereicht',submitted:'Eingereicht',approved:'Bestätigt',rejected:'Abgelehnt',unlocked:'Freigegeben',forwarded:'An Buchhaltung gesendet',confirmed:'Buchhaltung bestätigt'}[s]||s;}
-function stB(s){return{missing:'b-miss',submitted:'b-sent',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
+function stL(s){return{
+  missing:'Nicht eingereicht',
+  submitted:'Eingereicht',
+  approved:'Bestätigt (PL)',
+  approved_pl:'Bestätigt (PL 1) — wartet auf CC',
+  approved_cc:'Beide PLs bestätigt',
+  rejected:'Abgelehnt',
+  unlocked:'Freigegeben',
+  forwarded:'An Buchhaltung gesendet',
+  confirmed:'Buchhaltung bestätigt'
+}[s]||s;}
+function stB(s){return{missing:'b-miss',submitted:'b-sent',approved:'b-ok',approved_pl:'b-sent',approved_cc:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
 function stampH(s){
   if(s==='approved')return '<div class="stamp stamp-ok">✓ BESTÄTIGT</div>';
   if(s==='rejected')return '<div class="stamp stamp-rej">✗ ABGELEHNT</div>';
@@ -1335,6 +1371,9 @@ function buildPLDashboard(){
     tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">Noch keine Mitarbeiter.</td></tr>';
     return;
   }
+  // Also add CC submissions (people who listed this PL as CC)
+  const ccMembers=Object.keys(USERS[CU].ccSubmissions||{});
+  ccMembers.forEach(name=>{if(!members.includes(name))members.push(name);});
   // ONE ROW PER PERSON — show latest status summary
   members.forEach(name=>{
     const mu=USERS[name];if(!mu)return;
@@ -1571,14 +1610,37 @@ function handleConfirm(){
 }
 
 async function doApprove(){
-  const upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
+    // Get current submission to check CC
+    const doc=await db.collection('submissions').doc(docId).get();
+    const sub=doc.exists?doc.data():{};
+    const hasCC=sub.cc&&sub.cc!=='';
+    const currentSt=sub.st||'missing';
+    let upd={};
+    if(hasCC){
+      // Check if this is PL1 or CC confirming
+      if(CU===sub.pl||(isAdm(USERS[CU])&&currentSt==='submitted')){
+        // First confirmation (main PL or admin acting as PL)
+        upd={st:'approved_pl',stamp:'approved_pl',approvedBy:CU,approvedAt:now()};
+        toast('✅ Bestätigt! Wartet noch auf Bestätigung von CC: '+sub.cc);
+      } else if(CU===sub.cc||(isAdm(USERS[CU])&&currentSt==='approved_pl')){
+        // Second confirmation (CC PL)
+        upd={st:'forwarded',stamp:'forwarded',approvedBy:sub.approvedBy||CU,approvedAt:sub.approvedAt||now(),
+          approvedByCc:CU,approvedAtCc:now(),forwardedBy:CU,forwardedAt:now()};
+        toast('✅ Beide PLs bestätigt! An Buchhaltung gesendet.');
+      } else {
+        // Admin confirming both at once
+        upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
+        toast('✅ Bestätigt & an Buchhaltung gesendet!');
+      }
+    } else {
+      // No CC — direct to Buchhaltung
+      upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
+      toast('✅ Bestätigt & an Buchhaltung gesendet!');
+    }
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
-    toast('✅ Bestätigt & an Buchhaltung gesendet!');
-    // Reload ALL data from Firebase → everyone sees updated status
     await loadAllData();
-    // Rebuild views based on role
     if(isAdm(USERS[CU])){
       buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
       go('s-admin');
@@ -2211,16 +2273,27 @@ function buildROTableWithData(sub){return buildFullViewHTML(sub);}
 
 
 function plEditSubmission(){
-  // PL or Admin edits a submission
   if(!curDetail||!curMonth){toast('Kein Mitarbeiter ausgewählt.','err');return;}
+  // Load from Firebase if not in cache
   const sub=USERS[curDetail]?.status?.[curMonth];
-  if(!sub){toast('Abrechnung nicht gefunden.','err');return;}
+  if(!sub){
+    // Try loading fresh
+    db.collection('submissions').doc(curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get().then(doc=>{
+      if(doc.exists){
+        if(!USERS[curDetail])USERS[curDetail]={status:{}};
+        if(!USERS[curDetail].status)USERS[curDetail].status={};
+        const data=doc.data();
+        USERS[curDetail].status[curMonth]={...data,st:'unlocked'};
+        selTable=data.tbl||1;selPL=data.pl||'';
+        if(selTable===1)openT1();else openT2();
+      } else {toast('Abrechnung nicht gefunden.','err');}
+    }).catch(e=>toast('Fehler: '+e.message,'err'));
+    return;
+  }
   selTable=sub.tbl||1;
   selPL=sub.pl||'';
-  // Force unlock for editing
   if(!USERS[curDetail].status)USERS[curDetail].status={};
   USERS[curDetail].status[curMonth]={...sub,st:'unlocked'};
-  // Open table with existing data
   if(selTable===1)openT1();else openT2();
 }
 
@@ -2308,7 +2381,7 @@ function buildExcelT1(name,month,entry){
     ['SPOMA Parkett und Ausbau GmbH'],
     ['Monatsabrechnung — Tabelle 1 (Monteur, Azubi, etc.)'],
     [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||''],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–'],
     ['Tarifgebiet:',entry?.tarif||'','','','','','','','','','','','','',''],
     [],
     // Header row
@@ -2387,7 +2460,7 @@ function buildExcelT2(name,month,entry){
     ['SPOMA Parkett und Ausbau GmbH'],
     ['Monatsabrechnung — Tabelle 2 (Projektleiter, Bauleiter, etc.)'],
     [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||''],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–'],
     [],
     ['Tag','Baustelle','Kostenstelle','Urlaub','Krank','Besonderheiten','Auslöse versteuert (18€)','Auslöse steuerfrei €'],
   ];
