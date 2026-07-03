@@ -264,6 +264,7 @@ optgroup{font-weight:700;}
 ════════════════════════════════════════ -->
 <div id="s-reg" class="screen">
 <div class="login-wrap" style="max-width:420px;">
+  <div style="text-align:left;margin-bottom:8px;"><button onclick="go('s-login')" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:13px;">← Zurück zum Login</button></div>
   <div style="font-size:17px;font-weight:800;color:var(--black);text-align:center;margin-bottom:14px;letter-spacing:1px;text-transform:uppercase;">Registrieren</div>
   <div class="card">
     <div class="notif" style="margin-bottom:13px;font-size:11px;">Erstes Passwort = dein vollständiger Name. Du kannst es danach ändern.</div>
@@ -814,19 +815,31 @@ async function loadAllData(){
 }
 
 async function loadPLData(plName){
-  // Reload members and their submissions for a PL
   Object.keys(USERS).forEach(name=>{
     if(USERS[name].pl===plName){
       if(!USERS[plName].members)USERS[plName].members={};
       USERS[plName].members[name]=true;
     }
   });
-  const snap=await db.collection('submissions').where('pl','==',plName).get();
-  snap.forEach(d=>{
+  // Load where pl == plName
+  const snap1=await db.collection('submissions').where('pl','==',plName).get();
+  snap1.forEach(d=>{
     const sub=d.data();const name=sub.employeeName;const month=sub.month;
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
+    if(!USERS[plName].members)USERS[plName].members={};
+    USERS[plName].members[name]=true;
+  });
+  // Also load where cc == plName
+  const snap2=await db.collection('submissions').where('cc','==',plName).get();
+  snap2.forEach(d=>{
+    const sub=d.data();const name=sub.employeeName;const month=sub.month;
+    if(!name||!month||!USERS[name])return;
+    if(!USERS[name].status)USERS[name].status={};
+    USERS[name].status[month]=sub;
+    if(!USERS[plName].members)USERS[plName].members={};
+    USERS[plName].members[name]=true;
   });
 }
 
@@ -1150,15 +1163,24 @@ async function submitT1(){
   const pl=selPL||u.pl;
   const cc=document.getElementById('t1-cc')?.value||selCC;
   const newSigs1=gatherSignatures('t1');
-  let origSigs1={};
-  try{const eDoc=await db.collection('submissions').doc(CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get();
-    if(eDoc.exists)origSigs1=eDoc.data().originalSignatures||eDoc.data().signatures||{};}catch(e){}
-  const subData={st:'submitted',stamp:'pending',pl,cc:cc||null,tbl:1,submittedAt:now(),employeeName:CU,month:curMonth,
+  let origSigs1={};let prevSub1={};
+  try{const eDoc=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
+    if(eDoc.exists){prevSub1=eDoc.data();origSigs1=prevSub1.originalSignatures||prevSub1.signatures||{};}}catch(e){}
+  // If PL/Admin is editing, keep existing status; only employee resets to submitted
+  const isEditing=isEditingForOther||(CU!==targetName);
+  const newSt=isEditing?(prevSub1.st||'submitted'):'submitted';
+  const newAction=isEditing?'edited':'submitted';
+  const prevHist1=prevSub1.editHistory||[];
+  const subData={st:newSt,stamp:isEditing?(prevSub1.stamp||'pending'):'pending',
+    pl,cc:cc||null,tbl:1,
+    submittedAt:prevSub1.submittedAt||now(),
+    editedAt:isEditing?now():undefined,
+    employeeName:targetName,month:targetMonth,
     tableData:gatherT1Data(),
     signatures:newSigs1,
     originalSignatures:Object.keys(origSigs1).length?origSigs1:newSigs1,
     currentSignatures:newSigs1,
-    editHistory:[{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'submitted'}]};
+    editHistory:[...prevHist1,{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:newAction}]};
   // Save to Firestore
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
@@ -1316,15 +1338,23 @@ async function submitT2(){
   const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
   const u=USERS[targetName]||USERS[CU];const pl=selPL||u.pl;
   const newSigs2=gatherSignatures('t2');
-  let origSigs2={};
-  try{const eDoc2=await db.collection('submissions').doc(CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get();
-    if(eDoc2.exists)origSigs2=eDoc2.data().originalSignatures||eDoc2.data().signatures||{};}catch(e){}
-  const subData={st:'submitted',stamp:'pending',pl,cc:selCC||null,tbl:2,submittedAt:now(),employeeName:CU,month:curMonth,
+  let origSigs2={};let prevSub2={};
+  try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
+    if(eDoc2.exists){prevSub2=eDoc2.data();origSigs2=prevSub2.originalSignatures||prevSub2.signatures||{};}}catch(e){}
+  const isEditing2=isEditingForOther||(CU!==targetName);
+  const newSt2=isEditing2?(prevSub2.st||'submitted'):'submitted';
+  const newAction2=isEditing2?'edited':'submitted';
+  const prevHist2=prevSub2.editHistory||[];
+  const subData={st:newSt2,stamp:isEditing2?(prevSub2.stamp||'pending'):'pending',
+    pl,cc:selCC||null,tbl:2,
+    submittedAt:prevSub2.submittedAt||now(),
+    editedAt:isEditing2?now():undefined,
+    employeeName:targetName,month:targetMonth,
     tableData:gatherT2Data(),
     signatures:newSigs2,
     originalSignatures:Object.keys(origSigs2).length?origSigs2:newSigs2,
     currentSignatures:newSigs2,
-    editHistory:[{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'submitted'}]};
+    editHistory:[...prevHist2,{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:newAction2}]};
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
@@ -1685,65 +1715,27 @@ function buildTrackHtml(entry){
 }
 
 function handleConfirm(){
-  // If Admin or Christin Frank → Buchhaltung bestätigen (final)
-  // If PL → Bestätigen & an Buchhaltung senden
-  if(isAdm(USERS[CU])){
-    admConfirmForAccounting();
-  } else {
-    doApprove();
-  }
+  // Everyone uses doApprove → sets 'approved'
+  // Only Christin Frank uses admConfirmForAccounting → sets 'confirmed'
+  doApprove();
 }
 
 async function doApprove(){
-  // Permission check
-  if(!isAdm(USERS[CU])&&!isPL(USERS[CU])){toast('Keine Berechtigung.','err');return;}
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     const doc=await db.collection('submissions').doc(docId).get();
     if(!doc.exists){toast('Abrechnung nicht gefunden.','err');return;}
     const sub=doc.data();
-    const hasCC=!!(sub.cc&&sub.cc!=='');
-    const currentSt=sub.st||'missing';
-    let upd={};
-    const isMainPL=(CU===sub.pl)||isAdm(USERS[CU]);
-    const isCCPL=(CU===sub.cc)||isAdm(USERS[CU]);
-
-    if(!hasCC){
-      // No CC → approve directly
-      upd={
-        st:'approved', stamp:'approved',
-        mainApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'main_pl'}
-      };
-      toast('✅ Bestätigt! Jetzt "An Buchhaltung senden" klicken.');
-    } else if(isMainPL && currentSt==='submitted'){
-      // Main PL approves first
-      upd={
-        st:'partly_approved', stamp:'partly_approved',
-        mainApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'main_pl'}
-      };
-      toast('✅ Bestätigt! Wartet noch auf CC: '+sub.cc);
-    } else if(isCCPL && currentSt==='partly_approved'){
-      // CC PL approves second → fully approved
-      upd={
-        st:'approved', stamp:'approved',
-        ccApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'cc_pl'}
-      };
-      toast('✅ CC bestätigt! Beide PLs haben bestätigt. Jetzt "An Buchhaltung senden".');
-    } else if(isAdm(USERS[CU])){
-      // Admin overrides both at once
-      upd={
-        st:'approved', stamp:'approved',
-        mainApproval:{approved:true, by:CU, at:now(), role:'admin'},
-        ccApproval:hasCC?{approved:true, by:CU, at:now(), role:'admin'}:undefined
-      };
-      toast('✅ Admin-Bestätigung. Jetzt "An Buchhaltung senden".');
-    } else {
-      toast('Berechtigung fehlt oder Status falsch.','err');return;
-    }
-    // Add to edit history
-    const hist=[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU].role,action:'approved'}];
-    upd.editHistory=hist;
+    // Permission: Admin OR main PL OR CC PL of this submission
+    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
+    const upd={
+      st:'approved', stamp:'approved',
+      approvedBy:CU, approvedAt:now(),
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'approved'}]
+    };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('✅ Bestätigt! Jetzt "📤 An Buchhaltung" klicken.');
     await loadAllData();
     refreshAfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
@@ -1751,12 +1743,14 @@ async function doApprove(){
 
 // Send to Buchhaltung (separate step after approval)
 async function sendToBuchhaltung(){
-  if(!isAdm(USERS[CU])&&!isPL(USERS[CU])){toast('Keine Berechtigung.','err');return;}
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     const doc=await db.collection('submissions').doc(docId).get();
     if(!doc.exists){toast('Nicht gefunden.','err');return;}
     const sub=doc.data();
+    // Permission: Admin OR main PL OR CC PL
+    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
     if(sub.st!=='approved'){toast('Abrechnung muss zuerst bestätigt sein.','err');return;}
     const upd={
       st:'forwarded', stamp:'forwarded',
@@ -1813,24 +1807,42 @@ async function doUnlock(){
 }
 
 async function sendToFrank(){
-  const members=Object.keys(USERS[CU].members||{});
-  const approved=members.filter(n=>USERS[n]&&Object.values(USERS[n].status||{}).some(e=>(e.st||e)==='approved'));
-  if(!approved.length){toast('Keine bestätigten Abrechnungen vorhanden.','err');return;}
-  for(const n of approved){
-    for(const m of Object.keys(USERS[n].status||{})){
-      if((USERS[n].status[m].st||USERS[n].status[m])==='approved'){
-        const upd={st:'forwarded',stamp:'forwarded',forwardedBy:CU,forwardedAt:now()};
-        const docId=n.replace(/ /g,'_')+'_'+m.replace(/ /g,'_');
-        await db.collection('submissions').doc(docId).set(upd,{merge:true});
-        USERS[n].status[m]={...USERS[n].status[m],...upd};
+  // Send all 'approved' submissions from this PL to Buchhaltung
+  if(!isAdm(USERS[CU])&&!isPL(USERS[CU])){toast('Keine Berechtigung.','err');return;}
+  const members=[CU,...Object.keys(USERS[CU].members||{})];
+  let count=0;
+  for(const name of members){
+    const statuses=USERS[name]?.status||{};
+    for(const month of Object.keys(statuses)){
+      const sub=statuses[month];
+      if((sub.st||sub)==='approved'){
+        const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+        try{
+          const doc=await db.collection('submissions').doc(docId).get();
+          if(!doc.exists)continue;
+          const data=doc.data();
+          const upd={
+            st:'forwarded', stamp:'forwarded',
+            forwarding:{forwarded:true,by:CU,at:now()},
+            editHistory:[...(data.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'forwarded'}]
+          };
+          await db.collection('submissions').doc(docId).set(upd,{merge:true});
+          count++;
+        }catch(e){console.error('sendToFrank:',e);}
       }
     }
   }
-  toast('✅ '+approved.length+' Abrechnungen an Buchhaltung (Christin Frank) gesendet!');
-  buildPLStats();buildPLDashboard();
+  if(count>0){
+    toast('📤 '+count+' Abrechnung(en) an Buchhaltung gesendet!');
+    await loadAllData();
+    refreshAfterAction();
+  } else {
+    toast('Keine bestätigten Abrechnungen zum Senden.','err');
+  }
 }
 
-function openPLOwnForm(){selTable=2;selPL='';curMonth='Juni 2026';openT2();}
+
+function openPLOwnForm(){selTable=2;selPL='';curMonth=currentMonthYear();openT2();}
 
 // ════════════════════════════════════════
 // HISTORY
@@ -2463,17 +2475,8 @@ async function plEditSubmission(){
 }
 
 function admEditSubmission(){
-  // Sepehr or Christin Frank can open and edit any submission
-  if(!curDetail||!curMonth){toast('Kein Mitarbeiter ausgewählt.','err');return;}
-  const sub = USERS[curDetail]?.status?.[curMonth];
-  if(!sub){toast('Abrechnung nicht gefunden.','err');return;}
-  selTable = sub.tbl || 1;
-  selPL = sub.pl || '';
-  // Force unlock for editing
-  if(!USERS[curDetail].status)USERS[curDetail].status={};
-  USERS[curDetail].status[curMonth] = {...sub, st:'unlocked'};
-  // Open table with existing data
-  if(selTable===1) openT1(); else openT2();
+  // Use same logic as plEditSubmission - loads and fills existing data
+  plEditSubmission();
 }
 
 async function admConfirmForAccounting(){
