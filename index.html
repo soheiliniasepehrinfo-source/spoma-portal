@@ -595,6 +595,7 @@ optgroup{font-weight:700;}
     <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
       <button class="btn-sm btn-dark" onclick="exportDetailExcel()">⬇ Excel (.xlsx)</button>
       <button class="btn-sm btn-warn" onclick="doUnlock()">🔓 Freigeben</button>
+      <button class="btn-sm btn-warn" id="pld-edit-btn" onclick="plEditSubmission()" style="display:none;">✏ Bearbeiten</button>
       <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
       <button class="btn-sm btn-success" id="pld-confirm-btn" onclick="handleConfirm()">✓ Bestätigen</button>
     </div>
@@ -1506,6 +1507,15 @@ async function openPLDetail(name,month,e){
     const trackHtml=buildTrackHtml(sub);
     const tableHtml=buildFullViewHTML(sub);
     document.getElementById('pld-content').innerHTML=trackHtml+tableHtml;
+    // Update confirm button
+    const confirmBtn=document.getElementById('pld-confirm-btn');
+    if(confirmBtn) confirmBtn.textContent=isAdm(USERS[CU])?'✓ Buchhaltung bestätigen':'✓ Bestätigen & an Buchhaltung';
+    // Show edit button for Admin or PL for their own members
+    const editBtn=document.getElementById('pld-edit-btn');
+    if(editBtn){
+      const canEdit=isAdm(USERS[CU])||(isPL(USERS[CU])&&(USERS[CU]?.members?.[name]||name===CU));
+      editBtn.style.display=canEdit?'inline-block':'none';
+    }
   }catch(err){
     console.error('openPLDetail:',err);
     document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler: '+err.message+'</div>';
@@ -2199,6 +2209,20 @@ function buildFullViewHTML(sub){
 // Keep old name as alias for compatibility
 function buildROTableWithData(sub){return buildFullViewHTML(sub);}
 
+
+function plEditSubmission(){
+  // PL or Admin edits a submission
+  if(!curDetail||!curMonth){toast('Kein Mitarbeiter ausgewählt.','err');return;}
+  const sub=USERS[curDetail]?.status?.[curMonth];
+  if(!sub){toast('Abrechnung nicht gefunden.','err');return;}
+  selTable=sub.tbl||1;
+  selPL=sub.pl||'';
+  // Force unlock for editing
+  if(!USERS[curDetail].status)USERS[curDetail].status={};
+  USERS[curDetail].status[curMonth]={...sub,st:'unlocked'};
+  // Open table with existing data
+  if(selTable===1)openT1();else openT2();
+}
 
 function admEditSubmission(){
   // Sepehr or Christin Frank can open and edit any submission
