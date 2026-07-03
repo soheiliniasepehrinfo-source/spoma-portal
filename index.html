@@ -598,6 +598,7 @@ optgroup{font-weight:700;}
       <button class="btn-sm btn-warn" id="pld-edit-btn" onclick="plEditSubmission()">✏ Bearbeiten</button>
       <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
       <button class="btn-sm btn-success" id="pld-confirm-btn" onclick="handleConfirm()">✓ Bestätigen</button>
+      <button class="btn-sm btn-primary" id="pld-send-btn" onclick="sendToBuchhaltung()" style="display:none;">📤 An Buchhaltung</button>
     </div>
   </div>
   <div id="pld-content"></div>
@@ -801,11 +802,10 @@ async function loadAllData(){
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
-    // Also add to CC-PL's members list
-    if(sub.cc&&USERS[sub.cc]){
+    // Also add to CC-PL's members and submissions
+    if(sub.cc&&sub.cc!==''&&USERS[sub.cc]){
       if(!USERS[sub.cc].members)USERS[sub.cc].members={};
       USERS[sub.cc].members[name]=true;
-      // CC submissions stored separately
       if(!USERS[sub.cc].ccSubmissions)USERS[sub.cc].ccSubmissions={};
       if(!USERS[sub.cc].ccSubmissions[name])USERS[sub.cc].ccSubmissions[name]={};
       USERS[sub.cc].ccSubmissions[name][month]=sub;
@@ -850,15 +850,14 @@ function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank';}
 function stL(s){return{
   missing:'Nicht eingereicht',
   submitted:'Eingereicht',
-  approved:'Bestätigt (PL)',
-  approved_pl:'Bestätigt (PL 1) — wartet auf CC',
-  approved_cc:'Beide PLs bestätigt',
+  partly_approved:'Wartet auf CC-Bestätigung',
+  approved:'Bestätigt',
   rejected:'Abgelehnt',
   unlocked:'Freigegeben',
   forwarded:'An Buchhaltung gesendet',
   confirmed:'Buchhaltung bestätigt'
 }[s]||s;}
-function stB(s){return{missing:'b-miss',submitted:'b-sent',approved:'b-ok',approved_pl:'b-sent',approved_cc:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
+function stB(s){return{missing:'b-miss',submitted:'b-sent',partly_approved:'b-sent',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
 function stampH(s){
   if(s==='approved')return '<div class="stamp stamp-ok">✓ BESTÄTIGT</div>';
   if(s==='rejected')return '<div class="stamp stamp-rej">✗ ABGELEHNT</div>';
@@ -1150,9 +1149,16 @@ async function submitT1(){
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl;
   const cc=document.getElementById('t1-cc')?.value||selCC;
+  const newSigs1=gatherSignatures('t1');
+  let origSigs1={};
+  try{const eDoc=await db.collection('submissions').doc(CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get();
+    if(eDoc.exists)origSigs1=eDoc.data().originalSignatures||eDoc.data().signatures||{};}catch(e){}
   const subData={st:'submitted',stamp:'pending',pl,cc:cc||null,tbl:1,submittedAt:now(),employeeName:CU,month:curMonth,
     tableData:gatherT1Data(),
-    signatures:gatherSignatures('t1')};
+    signatures:newSigs1,
+    originalSignatures:Object.keys(origSigs1).length?origSigs1:newSigs1,
+    currentSignatures:newSigs1,
+    editHistory:[{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'submitted'}]};
   // Save to Firestore
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
@@ -1160,10 +1166,16 @@ async function submitT1(){
   if(!USERS[targetName].status)USERS[targetName].status={};
   USERS[targetName].status[targetMonth]=subData;
   if(USERS[targetName].locked)delete USERS[targetName].locked[targetMonth];
+  // Add edit history
+  const prevDoc=await db.collection('submissions').doc(docId).get();
+  const prevHist=prevDoc.exists?(prevDoc.data().editHistory||[]):[];
+  const prevOrigSigs=prevDoc.exists?(prevDoc.data().originalSignatures||{}):{}; 
+  // Preserve original signatures - NEVER overwrite
+  if(Object.keys(prevOrigSigs).length) subData.originalSignatures=prevOrigSigs;
+  subData.editHistory=[...prevHist,{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'edited'}];
   // Reset editing state
   isEditingForOther=false;editingFor=null;editingMonth=null;
   toast('✅ Tabelle 1 für '+targetMonth+' ('+targetName+') gespeichert!');
-  // Go back to detail view
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   else openT1();
 }
@@ -1303,9 +1315,16 @@ async function submitT2(){
   const targetName = isEditingForOther&&editingFor ? editingFor : CU;
   const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
   const u=USERS[targetName]||USERS[CU];const pl=selPL||u.pl;
+  const newSigs2=gatherSignatures('t2');
+  let origSigs2={};
+  try{const eDoc2=await db.collection('submissions').doc(CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get();
+    if(eDoc2.exists)origSigs2=eDoc2.data().originalSignatures||eDoc2.data().signatures||{};}catch(e){}
   const subData={st:'submitted',stamp:'pending',pl,cc:selCC||null,tbl:2,submittedAt:now(),employeeName:CU,month:curMonth,
     tableData:gatherT2Data(),
-    signatures:gatherSignatures('t2')};
+    signatures:newSigs2,
+    originalSignatures:Object.keys(origSigs2).length?origSigs2:newSigs2,
+    currentSignatures:newSigs2,
+    editHistory:[{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'submitted'}]};
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
@@ -1569,6 +1588,14 @@ async function openSubmissionDetail(name, month){
     const trackHtml = buildTrackHtml(sub);
     const tableHtml = buildFullViewHTML(sub);
     document.getElementById('pld-content').innerHTML = trackHtml + tableHtml;
+    // Update buttons
+    const stSub=sub.st||'missing';
+    const cBtn=document.getElementById('pld-confirm-btn');
+    if(cBtn) cBtn.style.display=['approved','forwarded','confirmed'].includes(stSub)?'none':'inline-block';
+    const sBtn=document.getElementById('pld-send-btn');
+    if(sBtn) sBtn.style.display=(stSub==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    const eBtn=document.getElementById('pld-edit-btn');
+    if(eBtn) eBtn.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   } catch(err){
     console.error('openSubmissionDetail:', err);
     document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--err);">Fehler: ' + err.message + '</div>';
@@ -1603,12 +1630,16 @@ async function openPLDetail(name,month,e){
     const trackHtml=buildTrackHtml(sub);
     const tableHtml=buildFullViewHTML(sub);
     document.getElementById('pld-content').innerHTML=trackHtml+tableHtml;
-    // Update confirm button
-    const confirmBtn=document.getElementById('pld-confirm-btn');
-    if(confirmBtn) confirmBtn.textContent=isAdm(USERS[CU])?'✓ Buchhaltung bestätigen':'✓ Bestätigen & an Buchhaltung';
-    // Edit button: visible for Admin and PL only
-    const editBtn=document.getElementById('pld-edit-btn');
-    if(editBtn) editBtn.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
+    // Update buttons based on role and status
+    const stPld=sub.st||'missing';
+    const confirmBtnPld=document.getElementById('pld-confirm-btn');
+    if(confirmBtnPld){
+      confirmBtnPld.style.display=['approved','forwarded','confirmed'].includes(stPld)?'none':'inline-block';
+    }
+    const sendBtnPld=document.getElementById('pld-send-btn');
+    if(sendBtnPld) sendBtnPld.style.display=(stPld==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    const editBtnPld=document.getElementById('pld-edit-btn');
+    if(editBtnPld) editBtnPld.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   }catch(err){
     console.error('openPLDetail:',err);
     document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler: '+err.message+'</div>';
@@ -1664,45 +1695,89 @@ function handleConfirm(){
 }
 
 async function doApprove(){
+  // Permission check
+  if(!isAdm(USERS[CU])&&!isPL(USERS[CU])){toast('Keine Berechtigung.','err');return;}
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
-    // Get current submission to check CC
     const doc=await db.collection('submissions').doc(docId).get();
-    const sub=doc.exists?doc.data():{};
-    const hasCC=sub.cc&&sub.cc!=='';
+    if(!doc.exists){toast('Abrechnung nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const hasCC=!!(sub.cc&&sub.cc!=='');
     const currentSt=sub.st||'missing';
     let upd={};
-    if(hasCC){
-      // Check if this is PL1 or CC confirming
-      if(CU===sub.pl||(isAdm(USERS[CU])&&currentSt==='submitted')){
-        // First confirmation (main PL or admin acting as PL)
-        upd={st:'approved_pl',stamp:'approved_pl',approvedBy:CU,approvedAt:now()};
-        toast('✅ Bestätigt! Wartet noch auf Bestätigung von CC: '+sub.cc);
-      } else if(CU===sub.cc||(isAdm(USERS[CU])&&currentSt==='approved_pl')){
-        // Second confirmation (CC PL)
-        upd={st:'forwarded',stamp:'forwarded',approvedBy:sub.approvedBy||CU,approvedAt:sub.approvedAt||now(),
-          approvedByCc:CU,approvedAtCc:now(),forwardedBy:CU,forwardedAt:now()};
-        toast('✅ Beide PLs bestätigt! An Buchhaltung gesendet.');
-      } else {
-        // Admin confirming both at once
-        upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
-        toast('✅ Bestätigt & an Buchhaltung gesendet!');
-      }
+    const isMainPL=(CU===sub.pl)||isAdm(USERS[CU]);
+    const isCCPL=(CU===sub.cc)||isAdm(USERS[CU]);
+
+    if(!hasCC){
+      // No CC → approve directly
+      upd={
+        st:'approved', stamp:'approved',
+        mainApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'main_pl'}
+      };
+      toast('✅ Bestätigt! Jetzt "An Buchhaltung senden" klicken.');
+    } else if(isMainPL && currentSt==='submitted'){
+      // Main PL approves first
+      upd={
+        st:'partly_approved', stamp:'partly_approved',
+        mainApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'main_pl'}
+      };
+      toast('✅ Bestätigt! Wartet noch auf CC: '+sub.cc);
+    } else if(isCCPL && currentSt==='partly_approved'){
+      // CC PL approves second → fully approved
+      upd={
+        st:'approved', stamp:'approved',
+        ccApproval:{approved:true, by:CU, at:now(), role:isAdm(USERS[CU])?'admin':'cc_pl'}
+      };
+      toast('✅ CC bestätigt! Beide PLs haben bestätigt. Jetzt "An Buchhaltung senden".');
+    } else if(isAdm(USERS[CU])){
+      // Admin overrides both at once
+      upd={
+        st:'approved', stamp:'approved',
+        mainApproval:{approved:true, by:CU, at:now(), role:'admin'},
+        ccApproval:hasCC?{approved:true, by:CU, at:now(), role:'admin'}:undefined
+      };
+      toast('✅ Admin-Bestätigung. Jetzt "An Buchhaltung senden".');
     } else {
-      // No CC — direct to Buchhaltung
-      upd={st:'forwarded',stamp:'forwarded',approvedBy:CU,approvedAt:now(),forwardedBy:CU,forwardedAt:now()};
-      toast('✅ Bestätigt & an Buchhaltung gesendet!');
+      toast('Berechtigung fehlt oder Status falsch.','err');return;
     }
+    // Add to edit history
+    const hist=[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU].role,action:'approved'}];
+    upd.editHistory=hist;
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     await loadAllData();
-    if(isAdm(USERS[CU])){
-      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
-      go('s-admin');
-    } else {
-      buildPLStats();buildPLDashboard();
-      go('s-pl');
-    }
+    refreshAfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
+}
+
+// Send to Buchhaltung (separate step after approval)
+async function sendToBuchhaltung(){
+  if(!isAdm(USERS[CU])&&!isPL(USERS[CU])){toast('Keine Berechtigung.','err');return;}
+  const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Nicht gefunden.','err');return;}
+    const sub=doc.data();
+    if(sub.st!=='approved'){toast('Abrechnung muss zuerst bestätigt sein.','err');return;}
+    const upd={
+      st:'forwarded', stamp:'forwarded',
+      forwarding:{forwarded:true, by:CU, at:now()},
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU].role,action:'forwarded'}]
+    };
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('📤 An Buchhaltung (Christin Frank) gesendet!');
+    await loadAllData();
+    refreshAfterAction();
+  }catch(e){toast('Fehler: '+e.message,'err');}
+}
+
+function refreshAfterAction(){
+  if(isAdm(USERS[CU])){
+    buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
+    go('s-admin');
+  } else {
+    buildPLStats();buildPLDashboard();
+    go('s-pl');
+  }
 }
 async function doReject(){
   const upd={st:'rejected',stamp:'rejected',rejectedBy:CU,rejectedAt:now()};
@@ -2029,12 +2104,24 @@ async function admResetPw(n){
   await fsSetUser(n,{pw:n});
   toast('Passwort von '+n+' zurückgesetzt.');buildAdmUsers();
 }
-function admRemove(n){
+async function admRemove(n){
   if(!isAdmin(CU)){toast('Keine Berechtigung.','err');return;}
   if(n===CU){toast('Nicht möglich.','err');return;}
-  if(!confirm(n+' wirklich entfernen?'))return;
-  if(USERS[n].pl&&USERS[USERS[n].pl])delete USERS[USERS[n].pl].members[n];
-  delete USERS[n];toast(n+' entfernt.');buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
+  if(!confirm(n+' wirklich dauerhaft löschen?
+
+Alle Abrechnungen bleiben in der Datenbank erhalten.'))return;
+  try{
+    // Delete from Firestore
+    await db.collection('users').doc(n).delete();
+    // Remove from PL members list in Firestore
+    if(USERS[n]?.pl&&USERS[USERS[n].pl]){
+      delete USERS[USERS[n].pl].members[n];
+      await fsSetUser(USERS[n].pl,{members:USERS[USERS[n].pl].members||{}});
+    }
+    delete USERS[n];
+    toast('🗑 '+n+' dauerhaft gelöscht.');
+    buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
 function toggleAddUser(){
@@ -2396,7 +2483,12 @@ async function admConfirmForAccounting(){
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     // Save confirmed status to Firebase
-    const upd={st:'confirmed',stamp:'confirmed',confirmedBy:CU,confirmedAt:now()};
+    const prevData=(await db.collection('submissions').doc(docId).get()).data()||{};
+    const upd={
+      st:'confirmed',stamp:'confirmed',
+      buchhaltung:{confirmed:true,by:CU,at:now()},
+      editHistory:[...(prevData.editHistory||[]),{by:CU,at:now(),role:'admin',action:'confirmed_buchhaltung'}]
+    };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     toast('✅ Buchhaltung bestätigt! Status für alle aktualisiert.');
     // Reload ALL data from Firebase → ALL users see updated status
@@ -2515,22 +2607,37 @@ function buildExcelT1(name,month,entry){
   rows.push([]);
   // Tracking
   rows.push(['STATUS & VERLAUF']);
+  // STATUS & COMPLETE AUDIT HISTORY
+  rows.push(['STATUS & VERLAUF']);
   rows.push(['Status:',stL(entry?.st||'missing')]);
-  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
-  if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-  if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-  if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+  // New structured history
+  const hist1=entry?.editHistory||[];
+  if(hist1.length){
+    rows.push(['AKTIONSPROTOKOLL']);
+    rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
+    hist1.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
+  } else {
+    // Legacy fields fallback
+    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
+    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
+    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
+    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
+    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
+    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
+    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+  }
   rows.push([]);
-  // SIGNATURES
-  const sigs1 = entry?.signatures || {};
-  rows.push(['UNTERSCHRIFTEN & DATUM']);
+  // ORIGINAL SIGNATURES (never changed)
+  const sigs1 = entry?.originalSignatures || entry?.signatures || {};
+  rows.push(['UNTERSCHRIFTEN & DATUM (Original)']);
   rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
   rows.push(['Datum:', sigs1.polier?.datum||'–', sigs1.bauleiter?.datum||'–']);
   rows.push(['Name (getippt):', sigs1.polier?.typed||'–', sigs1.bauleiter?.typed||'–']);
   rows.push(['Handunterschrift:', sigs1.polier?.drawn&&sigs1.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
     sigs1.bauleiter?.drawn&&sigs1.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
   rows.push([]);
-  rows.push(['Exportiert von:',CU,'am:',now()]);
+  rows.push(['Export von:',CU,'am:',now()]);
   return rows;
 }
 
@@ -2573,22 +2680,34 @@ function buildExcelT2(name,month,entry){
   rows.push(['Auslöse versteuert gesamt:',sumVst?sumVst+' €':'0 €']);
   rows.push(['Gesamt:',((sumVst+sumSfr).toFixed(2))+' €']);
   rows.push([]);
+  // STATUS & AUDIT HISTORY
   rows.push(['STATUS & VERLAUF']);
   rows.push(['Status:',stL(entry?.st||'missing')]);
-  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt]);
-  if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-  if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+  const hist2=entry?.editHistory||[];
+  if(hist2.length){
+    rows.push(['AKTIONSPROTOKOLL']);
+    rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
+    hist2.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
+  } else {
+    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
+    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
+    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
+    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
+    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
+    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
+    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
+    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+  }
   rows.push([]);
-  // SIGNATURES
-  const sigs2 = entry?.signatures || {};
-  rows.push(['UNTERSCHRIFTEN & DATUM']);
+  const sigs2 = entry?.originalSignatures || entry?.signatures || {};
+  rows.push(['UNTERSCHRIFTEN & DATUM (Original)']);
   rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
   rows.push(['Datum:', sigs2.polier?.datum||'–', sigs2.bauleiter?.datum||'–']);
   rows.push(['Name (getippt):', sigs2.polier?.typed||'–', sigs2.bauleiter?.typed||'–']);
   rows.push(['Handunterschrift:', sigs2.polier?.drawn&&sigs2.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
     sigs2.bauleiter?.drawn&&sigs2.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
   rows.push([]);
-  rows.push(['Exportiert von:',CU,'am:',now()]);
+  rows.push(['Export von:',CU,'am:',now()]);
   return rows;
 }
 
