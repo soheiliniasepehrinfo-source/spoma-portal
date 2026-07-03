@@ -2107,9 +2107,7 @@ async function admResetPw(n){
 async function admRemove(n){
   if(!isAdmin(CU)){toast('Keine Berechtigung.','err');return;}
   if(n===CU){toast('Nicht möglich.','err');return;}
-  if(!confirm(n+' wirklich dauerhaft löschen?
-
-Alle Abrechnungen bleiben in der Datenbank erhalten.'))return;
+  if(!confirm(n+' wirklich dauerhaft löschen? Alle Abrechnungen bleiben erhalten.'))return;
   try{
     // Delete from Firestore
     await db.collection('users').doc(n).delete();
