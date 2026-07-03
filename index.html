@@ -595,7 +595,7 @@ optgroup{font-weight:700;}
     <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
       <button class="btn-sm btn-dark" onclick="exportDetailExcel()">⬇ Excel (.xlsx)</button>
       <button class="btn-sm btn-warn" onclick="doUnlock()">🔓 Freigeben</button>
-      <button class="btn-sm btn-warn" id="pld-edit-btn" onclick="plEditSubmission()" style="display:none;">✏ Bearbeiten</button>
+      <button class="btn-sm btn-warn" id="pld-edit-btn" onclick="plEditSubmission()">✏ Bearbeiten</button>
       <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
       <button class="btn-sm btn-success" id="pld-confirm-btn" onclick="handleConfirm()">✓ Bestätigen</button>
     </div>
@@ -834,6 +834,7 @@ async function loadPLData(plName){
 // STATE
 // ════════════════════════════════════════
 let CU=null, curMonth=currentMonthYear(), curDetail=null, prevScr='s-login', prevProfileScr='s-pl', selTable=0, selPL='', selCC='';
+let editingFor=null, editingMonth=null, isEditingForOther=false;
 
 // ════════════════════════════════════════
 // HELPERS
@@ -1054,6 +1055,49 @@ function openT1(){
   buildT1SumTable();buildT1BezTable();t1Recalc();buildSigBoxes('t1-sigs','t1');
 }
 
+// Fill T1 table with saved data (for PL/Admin editing a submission)
+function fillT1WithData(rows){
+  if(!rows||!rows.length)return;
+  const tbody=document.getElementById('t1-tbody');
+  rows.forEach(r=>{
+    const tr=tbody.querySelector(`tr[data-day="${r.day}"]`);
+    if(!tr)return;
+    const cbs=tr.querySelectorAll('input[type=checkbox]');
+    if(cbs[0])cbs[0].checked=!!r.ost;
+    if(cbs[1])cbs[1].checked=!!r.west;
+    if(cbs[2])cbs[2].checked=!!r.bln;
+    const bssel=tr.querySelector('.bssel');
+    if(bssel&&r.baustelle){bssel.value=r.baustelle;t1OnBs(bssel);}
+    const kst=tr.querySelector('.kst');if(kst&&r.kst)kst.value=r.kst;
+    const zeit=tr.querySelectorAll('input[type=text]')[1];if(zeit&&r.zeit)zeit.value=r.zeit;
+    const fahr=tr.querySelector('.fahr');if(fahr&&r.fahr)fahr.value=r.fahr;
+    const anwes=tr.querySelector('.anwes');if(anwes&&r.anwes)anwes.value=r.anwes;
+    const url=tr.querySelector('.url');if(url)url.checked=!!r.url;
+    const krank=tr.querySelector('.krank');if(krank)krank.checked=!!r.krank;
+    const aus=tr.querySelector('.aus');if(aus)aus.checked=!!r.aus;
+    const km=tr.querySelector('.km');if(km&&r.km)km.value=r.km;
+  });
+  t1Recalc();
+}
+
+// Fill T2 table with saved data
+function fillT2WithData(rows){
+  if(!rows||!rows.length)return;
+  const tbody=document.getElementById('t2-tbody');
+  rows.forEach(r=>{
+    const tr=tbody.querySelector(`tr[data-day="${r.day}"]`);
+    if(!tr)return;
+    const bs=tr.querySelector('.bs2');if(bs&&r.baustelle)bs.value=r.baustelle;
+    const kst=tr.querySelector('.kst2');if(kst&&r.kst)kst.value=r.kst;
+    const url=tr.querySelector('.url2');if(url)url.checked=!!r.url;
+    const krank=tr.querySelector('.krank2');if(krank)krank.checked=!!r.krank;
+    const bem=tr.querySelector('.bem2');if(bem&&r.bem)bem.value=r.bem;
+    const vst=tr.querySelector('.vst2');if(vst)vst.checked=!!r.vst;
+    const sfr=tr.querySelector('.sfr2');if(sfr&&r.sfr)sfr.value=r.sfr;
+  });
+  t2Recalc();
+}
+
 function t1Recalc(){
   let tF=0,tA=0,tF50=0,tU=0,tK=0,tAus=0,tKm=0;const bsMap={};
   document.querySelectorAll('#t1-tbody tr').forEach(tr=>{
@@ -1100,20 +1144,28 @@ function buildT1BezTable(){
 }
 
 async function submitT1(){
-  const u=USERS[CU];
+  // If editing for another person, save to their record
+  const targetName = isEditingForOther&&editingFor ? editingFor : CU;
+  const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
+  const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl;
   const cc=document.getElementById('t1-cc')?.value||selCC;
   const subData={st:'submitted',stamp:'pending',pl,cc:cc||null,tbl:1,submittedAt:now(),employeeName:CU,month:curMonth,
     tableData:gatherT1Data(),
     signatures:gatherSignatures('t1')};
   // Save to Firestore
-  const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
+  subData.employeeName=targetName;subData.month=targetMonth;
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
-  if(!u.status)u.status={};
-  u.status[curMonth]=subData;
-  if(u.locked)delete u.locked[curMonth];
-  toast('✅ Tabelle 1 für '+curMonth+' an '+pl+' eingereicht!');
-  openT1();
+  if(!USERS[targetName].status)USERS[targetName].status={};
+  USERS[targetName].status[targetMonth]=subData;
+  if(USERS[targetName].locked)delete USERS[targetName].locked[targetMonth];
+  // Reset editing state
+  isEditingForOther=false;editingFor=null;editingMonth=null;
+  toast('✅ Tabelle 1 für '+targetMonth+' ('+targetName+') gespeichert!');
+  // Go back to detail view
+  if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
+  else openT1();
 }
 
 function gatherSignatures(prefix){
@@ -1248,15 +1300,20 @@ function updateT2Zuord(bsMap){
   document.getElementById('t2z-a').textContent=fmt(sA)+'%';document.getElementById('t2z-aus').textContent=fmt(sAus)+' €';document.getElementById('t2z-k').textContent=fmt(sAus)+' €';
 }
 async function submitT2(){
-  const u=USERS[CU];const pl=selPL||u.pl;
+  const targetName = isEditingForOther&&editingFor ? editingFor : CU;
+  const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
+  const u=USERS[targetName]||USERS[CU];const pl=selPL||u.pl;
   const subData={st:'submitted',stamp:'pending',pl,cc:selCC||null,tbl:2,submittedAt:now(),employeeName:CU,month:curMonth,
     tableData:gatherT2Data(),
     signatures:gatherSignatures('t2')};
-  const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
+  subData.employeeName=targetName;subData.month=targetMonth;
   await db.collection('submissions').doc(docId).set(subData,{merge:true});
-  if(!u.status)u.status={};
-  u.status[curMonth]=subData;
-  toast('✅ Tabelle 2 für '+curMonth+' eingereicht!');
+  if(!USERS[targetName].status)USERS[targetName].status={};
+  USERS[targetName].status[targetMonth]=subData;
+  isEditingForOther=false;editingFor=null;editingMonth=null;
+  toast('✅ Tabelle 2 für '+targetMonth+' ('+targetName+') gespeichert!');
+  if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   const sb=document.getElementById('t2-badge');sb.className='badge b-sent';sb.textContent='Eingereicht';
   document.getElementById('t2-notif').innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
 }
@@ -1549,12 +1606,9 @@ async function openPLDetail(name,month,e){
     // Update confirm button
     const confirmBtn=document.getElementById('pld-confirm-btn');
     if(confirmBtn) confirmBtn.textContent=isAdm(USERS[CU])?'✓ Buchhaltung bestätigen':'✓ Bestätigen & an Buchhaltung';
-    // Show edit button for Admin or PL for their own members
+    // Edit button: visible for Admin and PL only
     const editBtn=document.getElementById('pld-edit-btn');
-    if(editBtn){
-      const canEdit=isAdm(USERS[CU])||(isPL(USERS[CU])&&(USERS[CU]?.members?.[name]||name===CU));
-      editBtn.style.display=canEdit?'inline-block':'none';
-    }
+    if(editBtn) editBtn.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   }catch(err){
     console.error('openPLDetail:',err);
     document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler: '+err.message+'</div>';
@@ -2272,29 +2326,55 @@ function buildFullViewHTML(sub){
 function buildROTableWithData(sub){return buildFullViewHTML(sub);}
 
 
-function plEditSubmission(){
+async function plEditSubmission(){
   if(!curDetail||!curMonth){toast('Kein Mitarbeiter ausgewählt.','err');return;}
-  // Load from Firebase if not in cache
-  const sub=USERS[curDetail]?.status?.[curMonth];
-  if(!sub){
-    // Try loading fresh
-    db.collection('submissions').doc(curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_')).get().then(doc=>{
-      if(doc.exists){
-        if(!USERS[curDetail])USERS[curDetail]={status:{}};
-        if(!USERS[curDetail].status)USERS[curDetail].status={};
-        const data=doc.data();
-        USERS[curDetail].status[curMonth]={...data,st:'unlocked'};
-        selTable=data.tbl||1;selPL=data.pl||'';
-        if(selTable===1)openT1();else openT2();
-      } else {toast('Abrechnung nicht gefunden.','err');}
-    }).catch(e=>toast('Fehler: '+e.message,'err'));
-    return;
-  }
-  selTable=sub.tbl||1;
-  selPL=sub.pl||'';
-  if(!USERS[curDetail].status)USERS[curDetail].status={};
-  USERS[curDetail].status[curMonth]={...sub,st:'unlocked'};
-  if(selTable===1)openT1();else openT2();
+  // Load fresh from Firebase
+  try{
+    const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Abrechnung nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const tbl=sub.tbl||1;
+    // Save editing context
+    editingFor=curDetail; // who we are editing for
+    editingMonth=curMonth;
+    selPL=sub.pl||'';
+    selCC=sub.cc||'';
+    // Temporarily set CU context so openT1/T2 works
+    const realCU=CU;
+    // Ensure the person exists in USERS with unlocked status
+    if(!USERS[curDetail])USERS[curDetail]={status:{}};
+    if(!USERS[curDetail].status)USERS[curDetail].status={};
+    USERS[curDetail].status[curMonth]={...sub,st:'unlocked'};
+    // Open their table using their data
+    if(tbl===1){
+      // Set CU temporarily to the person
+      CU=curDetail;curMonth=editingMonth;
+      openT1();
+      CU=realCU;
+      // Fill with their saved data
+      setTimeout(()=>{
+        fillT1WithData(sub.tableData||[]);
+        // Show edit banner
+        document.getElementById('t1-notif').innerHTML=`<div class="notif" style="background:#FFF3CD;color:#856404;border:1px solid #ffc107;">
+          ✏ Du bearbeitest die Abrechnung von <strong>${editingFor}</strong> für <strong>${editingMonth}</strong>.
+          <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
+        // Update submit button to save to correct person
+        isEditingForOther=true;
+      },100);
+    } else {
+      CU=curDetail;curMonth=editingMonth;
+      openT2();
+      CU=realCU;
+      setTimeout(()=>{
+        fillT2WithData(sub.tableData||[]);
+        document.getElementById('t2-notif').innerHTML=`<div class="notif" style="background:#FFF3CD;color:#856404;border:1px solid #ffc107;">
+          ✏ Du bearbeitest die Abrechnung von <strong>${editingFor}</strong> für <strong>${editingMonth}</strong>.
+          <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
+        isEditingForOther=true;
+      },100);
+    }
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
 function admEditSubmission(){
