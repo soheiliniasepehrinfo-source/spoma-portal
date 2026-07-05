@@ -458,6 +458,11 @@ optgroup{font-weight:700;}
     <div class="f"><label>Name</label><input type="text" id="t2-name" style="width:148px;" readonly></div>
     <div class="f"><label>Personal-Nr.</label><input type="text" id="t2-nr" style="width:74px;" readonly></div>
     <div class="f"><label>Bauleiter / Polier</label><input type="text" id="t2-bl" style="width:148px;" placeholder="Name eintragen"></div>
+    <div class="f"><label>CC Projektleiter <span style="font-size:9px;color:var(--muted);">(optional)</span></label>
+      <select id="t2-cc" style="width:148px;" onchange="selCC=this.value">
+        <option value="">-- keiner --</option>
+      </select>
+    </div>
     <div style="margin-left:auto;align-self:center;"><span class="badge b-miss" id="t2-badge">Nicht eingereicht</span></div>
   </div>
   <div class="day-toggle">
@@ -969,7 +974,7 @@ function showChoice(){
 
 function refreshAllPLLists(){
   const pls=getPLs();
-  ['ch-pl','ch-cc','t1-cc','au-pl','adm-pl-sel'].forEach(id=>{
+  ['ch-pl','ch-cc','t1-cc','t2-cc','au-pl','adm-pl-sel'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
     const val=sel.value;
     const isMain=id==='ch-pl';
@@ -1212,12 +1217,14 @@ async function saveT2Draft(){
 }
 
 async function submitT1(){
-  // If editing for another person, save to their record
-  const targetName = isEditingForOther&&editingFor ? editingFor : CU;
-  const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
+  // Normal employee: targetName = CU
+  // PL/Admin editing someone else: targetName = editingFor
+  const targetName = (isEditingForOther && editingFor) ? editingFor : CU;
+  const targetMonth = (isEditingForOther && editingMonth) ? editingMonth : curMonth;
   const u=USERS[targetName]||USERS[CU];
-  const pl=selPL||u.pl;
-  const cc=document.getElementById('t1-cc')?.value||selCC;
+  const pl=selPL||u.pl||document.getElementById('t1-pl')?.value;
+  const cc=document.getElementById('t1-cc')?.value||selCC||'';
+  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs1=gatherSignatures('t1');
   let origSigs1={};let prevSub1={};
   try{const eDoc=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
@@ -1311,6 +1318,9 @@ function openT2(){
   document.getElementById('t2-sub').textContent=CU+' · Tabelle 2 · '+curMonth;
   document.getElementById('t2-name').value=CU;document.getElementById('t2-nr').value=u.nr||'';
   document.getElementById('t2-monat').textContent=curMonth;
+  // Populate CC PL dropdown for T2
+  refreshAllPLLists();
+  if(selCC){const cc2=document.getElementById('t2-cc');if(cc2)cc2.value=selCC;}
   const entry=u.status[curMonth]||{st:'missing'};const st=entry.st||'missing';
   const sb=document.getElementById('t2-badge');sb.className='badge '+stB(st);sb.textContent=stL(st);
   const ni=document.getElementById('t2-notif');
@@ -1390,9 +1400,12 @@ function updateT2Zuord(bsMap){
   document.getElementById('t2z-a').textContent=fmt(sA)+'%';document.getElementById('t2z-aus').textContent=fmt(sAus)+' €';document.getElementById('t2z-k').textContent=fmt(sAus)+' €';
 }
 async function submitT2(){
-  const targetName = isEditingForOther&&editingFor ? editingFor : CU;
-  const targetMonth = isEditingForOther&&editingMonth ? editingMonth : curMonth;
-  const u=USERS[targetName]||USERS[CU];const pl=selPL||u.pl;
+  const targetName = (isEditingForOther && editingFor) ? editingFor : CU;
+  const targetMonth = (isEditingForOther && editingMonth) ? editingMonth : curMonth;
+  const u=USERS[targetName]||USERS[CU];
+  const pl=selPL||u.pl||document.getElementById('t2-pl')?.value;
+  const cc2=document.getElementById('t2-cc')?.value||selCC||'';
+  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs2=gatherSignatures('t2');
   let origSigs2={};let prevSub2={};
   try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
@@ -1402,7 +1415,7 @@ async function submitT2(){
   const newAction2=isEditing2?'edited':'submitted';
   const prevHist2=prevSub2.editHistory||[];
   const subData={st:newSt2,stamp:isEditing2?(prevSub2.stamp||'pending'):'pending',
-    pl,cc:selCC||null,tbl:2,
+    pl,cc:cc2||selCC||null,tbl:2,
     submittedAt:prevSub2.submittedAt||now(),
     editedAt:isEditing2?now():undefined,
     employeeName:targetName,month:targetMonth,
@@ -1830,35 +1843,39 @@ function refreshAfterAction(){
   }
 }
 async function doReject(){
-  const upd={st:'rejected',stamp:'rejected',rejectedBy:CU,rejectedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    if(!allowed){toast('Keine Berechtigung.','err');return;}
+    const upd={
+      st:'rejected',stamp:'rejected',rejectedBy:CU,rejectedAt:now(),
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'rejected'}]
+    };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     toast('Abgelehnt — Mitarbeiter kann neu einreichen.','err');
     await loadAllData();
-    if(isAdm(USERS[CU])){
-      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
-      go('s-admin');
-    } else {
-      buildPLStats();buildPLDashboard();
-      go('s-pl');
-    }
+    refreshAfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
 async function doUnlock(){
-  const upd={st:'unlocked',stamp:'pending',unlockedBy:CU,unlockedAt:now()};
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    if(!allowed){toast('Keine Berechtigung.','err');return;}
+    const upd={
+      st:'unlocked',stamp:'pending',unlockedBy:CU,unlockedAt:now(),
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'unlocked'}]
+    };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     toast('🔓 '+curDetail+' kann jetzt bearbeiten.');
     await loadAllData();
-    if(isAdm(USERS[CU])){
-      buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
-      go('s-admin');
-    } else {
-      buildPLStats();buildPLDashboard();
-      go('s-pl');
-    }
+    refreshAfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
