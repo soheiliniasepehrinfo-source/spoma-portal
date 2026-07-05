@@ -432,7 +432,7 @@ optgroup{font-weight:700;}
   <div class="action-bar">
     <button class="btn-primary" id="t1-submit-btn" onclick="submitT1()">✈ EINREICHEN</button>
     <button class="btn-dark" onclick="exportExcelT1()">⬇ Excel (.xlsx)</button>
-    <button onclick="toast('Entwurf gespeichert.')">💾 Speichern</button>
+    <button onclick="saveT1Draft()">💾 Speichern</button>
     <div id="t1-locked-msg" style="display:none;background:var(--warn-bg);border:1px solid var(--gold);color:var(--warn-text);font-size:11px;padding:6px 12px;border-radius:4px;">🔒 Gesperrt — Projektleiter um Freigabe bitten</div>
   </div>
 </div>
@@ -506,7 +506,7 @@ optgroup{font-weight:700;}
   <div class="action-bar">
     <button class="btn-primary" onclick="submitT2()">✈ EINREICHEN</button>
     <button class="btn-dark" onclick="exportExcelT2()">⬇ Excel (.xlsx)</button>
-    <button onclick="toast('Entwurf gespeichert.')">💾 Speichern</button>
+    <button onclick="saveT2Draft()">💾 Speichern</button>
   </div>
 </div>
 </div>
@@ -862,6 +862,7 @@ function getPLs(){return Object.keys(USERS).filter(k=>isPL(USERS[k]));}
 function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank';}
 function stL(s){return{
   missing:'Nicht eingereicht',
+  draft:'Entwurf gespeichert',
   submitted:'Eingereicht',
   partly_approved:'Wartet auf CC-Bestätigung',
   approved:'Bestätigt',
@@ -870,7 +871,7 @@ function stL(s){return{
   forwarded:'An Buchhaltung gesendet',
   confirmed:'Buchhaltung bestätigt'
 }[s]||s;}
-function stB(s){return{missing:'b-miss',submitted:'b-sent',partly_approved:'b-sent',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
+function stB(s){return{missing:'b-miss',draft:'b-miss',submitted:'b-sent',partly_approved:'b-sent',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
 function stampH(s){
   if(s==='approved')return '<div class="stamp stamp-ok">✓ BESTÄTIGT</div>';
   if(s==='rejected')return '<div class="stamp stamp-rej">✗ ABGELEHNT</div>';
@@ -1153,6 +1154,61 @@ function buildT1BezTable(){
   BS_LIST.forEach((b,i)=>{const tr=document.createElement('tr');
     tr.innerHTML=`<td style="white-space:nowrap;">${b.n}</td><td><input type="text" value="${b.b}" placeholder="Bezeichnung..." style="min-width:140px;" oninput="BS_LIST[${i}].b=this.value.trim();t1RefreshDropdowns();"></td>`;
     tbody.appendChild(tr);});
+}
+
+async function saveT1Draft(){
+  const u=USERS[CU];
+  const pl=selPL||u.pl;
+  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  const cc=document.getElementById('t1-cc')?.value||selCC;
+  const targetName=isEditingForOther&&editingFor?editingFor:CU;
+  const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
+  const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
+  try{
+    const existing=await db.collection('submissions').doc(docId).get();
+    const prev=existing.exists?existing.data():{};
+    const draftData={
+      st:'draft', stamp:'pending',
+      pl, cc:cc||null, tbl:1,
+      employeeName:targetName, month:targetMonth,
+      savedAt:now(),
+      tableData:gatherT1Data(),
+      signatures:gatherSignatures('t1'),
+      originalSignatures:prev.originalSignatures||prev.signatures||{},
+      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'saved_draft'}]
+    };
+    await db.collection('submissions').doc(docId).set(draftData,{merge:true});
+    if(!USERS[targetName].status)USERS[targetName].status={};
+    USERS[targetName].status[targetMonth]=draftData;
+    toast('💾 Entwurf gespeichert!');
+  }catch(e){toast('Fehler: '+e.message,'err');}
+}
+
+async function saveT2Draft(){
+  const u=USERS[CU];
+  const pl=selPL||u.pl;
+  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  const targetName=isEditingForOther&&editingFor?editingFor:CU;
+  const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
+  const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
+  try{
+    const existing=await db.collection('submissions').doc(docId).get();
+    const prev=existing.exists?existing.data():{};
+    const draftData={
+      st:'draft', stamp:'pending',
+      pl, cc:selCC||null, tbl:2,
+      employeeName:targetName, month:targetMonth,
+      savedAt:now(),
+      tableData:gatherT2Data(),
+      signatures:gatherSignatures('t2'),
+      originalSignatures:prev.originalSignatures||prev.signatures||{},
+      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'saved_draft'}]
+    };
+    await db.collection('submissions').doc(docId).set(draftData,{merge:true});
+    if(!USERS[targetName].status)USERS[targetName].status={};
+    USERS[targetName].status[targetMonth]=draftData;
+    toast('💾 Entwurf gespeichert!');
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
 async function submitT1(){
