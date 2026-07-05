@@ -869,14 +869,15 @@ function stL(s){return{
   missing:'Nicht eingereicht',
   draft:'Entwurf gespeichert',
   submitted:'Eingereicht',
-  partly_approved:'Wartet auf CC-Bestätigung',
-  approved:'Bestätigt',
-  rejected:'Abgelehnt',
-  unlocked:'Freigegeben',
-  forwarded:'An Buchhaltung gesendet',
-  confirmed:'Buchhaltung bestätigt'
+  waiting_cc:'⏳ Wartet auf CC-Bestätigung',
+  cc_confirmed:'✓ CC bestätigt — wartet auf Haupt-PL',
+  approved:'✓ Bestätigt',
+  rejected:'✗ Abgelehnt',
+  unlocked:'🔓 Freigegeben',
+  forwarded:'→ An Buchhaltung gesendet',
+  confirmed:'✓✓ Buchhaltung bestätigt'
 }[s]||s;}
-function stB(s){return{missing:'b-miss',draft:'b-miss',submitted:'b-sent',partly_approved:'b-sent',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
+function stB(s){return{missing:'b-miss',draft:'b-miss',submitted:'b-sent',waiting_cc:'b-sent',cc_confirmed:'b-ok',approved:'b-ok',rejected:'b-rej',unlocked:'b-sent',forwarded:'b-fwd',confirmed:'b-dl'}[s]||'b-miss';}
 function stampH(s){
   if(s==='approved')return '<div class="stamp stamp-ok">✓ BESTÄTIGT</div>';
   if(s==='rejected')return '<div class="stamp stamp-rej">✗ ABGELEHNT</div>';
@@ -1564,10 +1565,17 @@ function buildPLDashboard(){
       latestStatus=mu.status[latestMonth]?.st||'missing';
     }
     // Count by status
-    let pendingCount=allMonths.filter(m=>(mu.status[m]?.st||'missing')==='submitted').length;
-    let approvedCount=allMonths.filter(m=>['forwarded','confirmed'].includes(mu.status[m]?.st||'')).length;
+    let pendingCount=allMonths.filter(m=>['submitted','waiting_cc','cc_confirmed'].includes(mu.status[m]?.st||'')).length;
+    let waitingCCCount=allMonths.filter(m=>mu.status[m]?.st==='waiting_cc').length;
+    let ccConfirmedCount=allMonths.filter(m=>mu.status[m]?.st==='cc_confirmed').length;
+    let approvedCount=allMonths.filter(m=>['approved','forwarded','confirmed'].includes(mu.status[m]?.st||'')).length;
+    // Check if this PL is CC on any submissions
+    const isCCOn=allMonths.filter(m=>mu.status[m]?.cc===CU&&['submitted','waiting_cc'].includes(mu.status[m]?.st||'')).length;
     const tr=document.createElement('tr');
     let statusHtml='';
+    if(isCCOn>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;background:#f59e0b;">👁 ${isCCOn} CC-Anfrage</span>`;
+    if(waitingCCCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">⏳ ${waitingCCCount} wartet auf CC</span>`;
+    if(ccConfirmedCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">✓CC ${ccConfirmedCount}</span>`;
     if(pendingCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">${pendingCount} ausstehend</span>`;
     if(approvedCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">${approvedCount} bestätigt</span>`;
     if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
@@ -1641,12 +1649,18 @@ async function openPersonProfile(name, fromScreen){
       const row = document.createElement('div');
       row.className = 'person-row clickable';
       row.style.marginBottom = '8px';
-      row.innerHTML = `
+      // CC info for this month
+    const isCCPLhere=(sub.cc===CU)&&!isAdm(USERS[CU]);
+    const ccStatusText=sub.cc?(sub.ccApprovedBy?`✓ CC: ${sub.ccApprovedBy}`:`⏳ CC: ${sub.cc}`):'';
+    row.innerHTML = `
         <div style="flex:1;">
-          <div style="font-weight:700;font-size:13px;">${month}</div>
+          <div style="font-weight:700;font-size:13px;">${month}
+            ${isCCPLhere?'<span style="background:#f59e0b;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;margin-left:4px;">CC-PL</span>':''}
+          </div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px;">Tabelle ${sub.tbl||'?'} · Eingereicht: ${sub.submittedAt||'–'}</div>
+          ${ccStatusText?`<div style="font-size:10px;margin-top:2px;">${ccStatusText}</div>`:''}
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           ${stampH(sub.stamp||st)}
           <span class="badge ${stB(st)}">${stL(st)}</span>
           <button class="btn-sm btn-primary" onclick="openSubmissionDetail('${name}','${month}')">👁 Öffnen</button>
@@ -1774,11 +1788,24 @@ function buildSigViewHTML(sub){
 function buildTrackHtml(entry){
   if(!entry||entry.st==='missing')return '';
   let html='<div class="track-log"><strong>Verlauf:</strong><br>';
-  if(entry.submittedAt)html+=`📤 Eingereicht: ${entry.submittedAt}<br>`;
-  if(entry.approvedBy)html+=`✓ Bestätigt von ${entry.approvedBy}: ${entry.approvedAt||''}<br>`;
-  if(entry.rejectedBy)html+=`✗ Abgelehnt von ${entry.rejectedBy}: ${entry.rejectedAt||''}<br>`;
-  if(entry.forwardedBy)html+=`→ An Buchhaltung von ${entry.forwardedBy}: ${entry.forwardedAt||''}<br>`;
-  if(entry.confirmedBy)html+=`✓ Buchhaltung bestätigt von ${entry.confirmedBy}: ${entry.confirmedAt||''}<br>`;
+  if(entry.submittedAt)html+=`📋 Eingereicht: ${entry.submittedAt}<br>`;
+  // CC info - prominently shown
+  if(entry.cc){
+    html+=`<span style="background:#FFF3CD;padding:1px 6px;border-radius:3px;font-size:11px;">CC-PL: ${entry.cc}</span><br>`;
+    if(entry.ccApprovedBy){
+      html+=`<span style="color:#16a34a;">✓ CC bestätigt von ${entry.ccApprovedBy}: ${entry.ccApprovedAt||''}</span><br>`;
+    } else {
+      html+=`<span style="color:#f59e0b;">⏳ Wartet auf CC-Bestätigung von: ${entry.cc}</span><br>`;
+    }
+  }
+  // Main PL approval
+  if(entry.mainApprovedBy)html+=`<span style="color:#16a34a;">✓ Haupt-PL bestätigt von ${entry.mainApprovedBy}: ${entry.mainApprovedAt||''}</span><br>`;
+  else if(entry.approvedBy)html+=`<span style="color:#16a34a;">✓ Bestätigt von ${entry.approvedBy}: ${entry.approvedAt||''}</span><br>`;
+  if(entry.rejectedBy)html+=`<span style="color:#dc2626;">✗ Abgelehnt von ${entry.rejectedBy}: ${entry.rejectedAt||''}</span><br>`;
+  if(entry.forwarding?.by)html+=`→ An Buchhaltung von ${entry.forwarding.by}: ${entry.forwarding.at||''}<br>`;
+  else if(entry.forwardedBy)html+=`→ An Buchhaltung von ${entry.forwardedBy}: ${entry.forwardedAt||''}<br>`;
+  if(entry.buchhaltung?.by)html+=`<span style="color:#0369a1;">✓✓ Buchhaltung bestätigt von ${entry.buchhaltung.by}: ${entry.buchhaltung.at||''}</span><br>`;
+  else if(entry.confirmedBy)html+=`<span style="color:#0369a1;">✓✓ Buchhaltung bestätigt von ${entry.confirmedBy}: ${entry.confirmedAt||''}</span><br>`;
   if(entry.downloadedBy)html+=`⬇ Heruntergeladen von ${entry.downloadedBy}: ${entry.downloadedAt||''}<br>`;
   html+='</div>';return html;
 }
@@ -1795,16 +1822,64 @@ async function doApprove(){
     const doc=await db.collection('submissions').doc(docId).get();
     if(!doc.exists){toast('Abrechnung nicht gefunden.','err');return;}
     const sub=doc.data();
-    // Permission: Admin OR main PL OR CC PL of this submission
+    const hasCC=!!(sub.cc&&sub.cc!=='');
+    const currentSt=sub.st||'missing';
+    // Permission check
     const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
     if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
-    const upd={
-      st:'approved', stamp:'approved',
-      approvedBy:CU, approvedAt:now(),
-      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'approved'}]
-    };
+    let upd={};
+    const hist=[...(sub.editHistory||[])];
+
+    if(isAdm(USERS[CU])&&!hasCC){
+      // Admin, no CC → direct approve
+      upd={st:'approved',stamp:'approved',mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'admin',action:'approved_as_admin'});
+      toast('✅ Bestätigt! Jetzt "📤 An Buchhaltung" klicken.');
+
+    } else if(isAdm(USERS[CU])&&hasCC){
+      // Admin with CC → approve both at once
+      upd={st:'approved',stamp:'approved',
+        ccApprovedBy:CU,ccApprovedAt:now(),
+        mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'admin',action:'approved_both_as_admin'});
+      toast('✅ Admin: Beide Bestätigungen gesetzt. Jetzt "📤 An Buchhaltung".');
+
+    } else if(CU===sub.cc&&(currentSt==='submitted'||currentSt==='waiting_cc')){
+      // CC PL confirms
+      upd={st:'cc_confirmed',stamp:'cc_confirmed',ccApprovedBy:CU,ccApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'cc_pl',action:'cc_approved'});
+      toast('✅ CC bestätigt! Haupt-PL '+sub.pl+' kann jetzt bestätigen.');
+
+    } else if(CU===sub.pl&&currentSt==='submitted'&&!hasCC){
+      // Main PL, no CC → direct approve
+      upd={st:'approved',stamp:'approved',mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'main_pl',action:'approved'});
+      toast('✅ Bestätigt! Jetzt "📤 An Buchhaltung" klicken.');
+
+    } else if(CU===sub.pl&&currentSt==='submitted'&&hasCC){
+      // Main PL confirms, but CC still pending
+      upd={st:'waiting_cc',stamp:'waiting_cc',mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'main_pl',action:'approved_waiting_cc'});
+      toast('✅ Bestätigt! Warte noch auf CC-Bestätigung von: '+sub.cc);
+
+    } else if(CU===sub.pl&&currentSt==='cc_confirmed'){
+      // Main PL confirms after CC already confirmed
+      upd={st:'approved',stamp:'approved',mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'main_pl',action:'approved_after_cc'});
+      toast('✅ Haupt-PL bestätigt! CC war bereits bestätigt. Jetzt "📤 An Buchhaltung".');
+
+    } else if(CU===sub.cc&&currentSt==='waiting_cc'){
+      // CC confirms after main PL already confirmed
+      upd={st:'approved',stamp:'approved',ccApprovedBy:CU,ccApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'cc_pl',action:'cc_approved_final'});
+      toast('✅ CC bestätigt! Beide PLs haben bestätigt. Jetzt "📤 An Buchhaltung".');
+
+    } else {
+      toast('Aktion nicht möglich — aktueller Status: '+stL(currentSt),'err');
+      return;
+    }
+    upd.editHistory=hist;
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
-    toast('✅ Bestätigt! Jetzt "📤 An Buchhaltung" klicken.');
     await loadAllData();
     refreshAfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
@@ -1820,7 +1895,16 @@ async function sendToBuchhaltung(){
     // Permission: Admin OR main PL OR CC PL
     const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
     if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
-    if(sub.st!=='approved'){toast('Abrechnung muss zuerst bestätigt sein.','err');return;}
+    if(sub.st!=='approved'){
+      if(sub.st==='waiting_cc'){
+        toast('Warte noch auf CC-Bestätigung von: '+(sub.cc||'CC-PL'),'err');
+      } else if(sub.st==='cc_confirmed'){
+        toast('CC hat bestätigt — bitte zuerst als Haupt-PL bestätigen.','err');
+      } else {
+        toast('Abrechnung muss zuerst bestätigt sein. Aktuell: '+stL(sub.st),'err');
+      }
+      return;
+    }
     const upd={
       st:'forwarded', stamp:'forwarded',
       forwarding:{forwarded:true, by:CU, at:now()},
@@ -2627,7 +2711,8 @@ function buildExcelT1(name,month,entry){
     ['SPOMA Parkett und Ausbau GmbH'],
     ['Monatsabrechnung — Tabelle 1 (Monteur, Azubi, etc.)'],
     [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–'],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–','CC bestätigt von:',entry?.ccApprovedBy||'–','CC bestätigt am:',entry?.ccApprovedAt||'–'],
+    ['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy||'–','am:',entry?.mainApprovedAt||entry?.approvedAt||'–'],
     ['Tarifgebiet:',entry?.tarif||'','','','','','','','','','','','','',''],
     [],
     // Header row
@@ -2721,7 +2806,8 @@ function buildExcelT2(name,month,entry){
     ['SPOMA Parkett und Ausbau GmbH'],
     ['Monatsabrechnung — Tabelle 2 (Projektleiter, Bauleiter, etc.)'],
     [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–'],
+    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–','CC bestätigt von:',entry?.ccApprovedBy||'–','CC bestätigt am:',entry?.ccApprovedAt||'–'],
+    ['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy||'–','am:',entry?.mainApprovedAt||entry?.approvedAt||'–'],
     [],
     ['Tag','Baustelle','Kostenstelle','Urlaub','Krank','Besonderheiten','Auslöse versteuert (18€)','Auslöse steuerfrei €'],
   ];
