@@ -620,7 +620,10 @@ optgroup{font-weight:700;}
   <div class="topbar-actions"><button onclick="go(isPL(USERS[CU])?'s-pl':isAdm(USERS[CU])?'s-admin':'s-choice')">← Zurück</button></div>
 </div>
 <div class="content"><div class="card gold-left">
-  <div class="section-title" style="margin-bottom:11px;">Übersicht — alle Monate 2026</div>
+  <div class="section-title" style="margin-bottom:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span>Übersicht — alle Monate</span>
+    <input type="number" id="hist-year" style="width:80px;font-size:13px;padding:4px 6px;" onchange="showHistory(parseInt(this.value))">
+  </div>
   <div id="hist-list"></div>
 </div></div>
 </div>
@@ -2032,9 +2035,14 @@ function openPLOwnForm(){showHistory();}
 // ════════════════════════════════════════
 // HISTORY
 // ════════════════════════════════════════
-async function showHistory(){
+async function showHistory(year){
   prevScr=isPL(USERS[CU])?'s-pl':isAdm(USERS[CU])?'s-admin':'s-choice';
   go('s-history');
+  const yearInput=document.getElementById('hist-year');
+  if(!year){
+    year=yearInput.value?parseInt(yearInput.value):new Date().getFullYear();
+  }
+  yearInput.value=year;
   const list=document.getElementById('hist-list');
   list.innerHTML='<div style="padding:12px;color:var(--muted);text-align:center;">⏳ Wird geladen...</div>';
   // Load fresh from Firebase
@@ -2047,7 +2055,7 @@ async function showHistory(){
   const u=USERS[CU];
   let found=false;
   MONTHS.forEach(m=>{
-    const month=m+' 2026';
+    const month=m+' '+year;
     const entry=u.status?.[month];
     const st=entry?.st||'missing';
     found=true;
