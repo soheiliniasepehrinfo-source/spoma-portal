@@ -809,10 +809,8 @@ async function loadAllData(){
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
-    // Also add to CC-PL's members and submissions
+    // Also add to CC-PL's scoped submissions (CC access must NOT grant full member/profile access)
     if(sub.cc&&sub.cc!==''&&USERS[sub.cc]){
-      if(!USERS[sub.cc].members)USERS[sub.cc].members={};
-      USERS[sub.cc].members[name]=true;
       if(!USERS[sub.cc].ccSubmissions)USERS[sub.cc].ccSubmissions={};
       if(!USERS[sub.cc].ccSubmissions[name])USERS[sub.cc].ccSubmissions[name]={};
       USERS[sub.cc].ccSubmissions[name][month]=sub;
@@ -844,8 +842,9 @@ async function loadPLData(plName){
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
-    if(!USERS[plName].members)USERS[plName].members={};
-    USERS[plName].members[name]=true;
+    if(!USERS[plName].ccSubmissions)USERS[plName].ccSubmissions={};
+    if(!USERS[plName].ccSubmissions[name])USERS[plName].ccSubmissions[name]={};
+    USERS[plName].ccSubmissions[name][month]=sub;
   });
 }
 
@@ -1566,7 +1565,10 @@ function buildPLDashboard(){
   // ONE ROW PER PERSON — show latest status summary
   members.forEach(name=>{
     const mu=USERS[name];if(!mu)return;
-    const allMonths=Object.keys(mu.status||{});
+    const isRealMember=(name===CU)||memberSet.includes(name);
+    // CC-only people: restrict to just the submission(s) where this PL is actually CC'd — not their full profile
+    const statusSrc=isRealMember?(mu.status||{}):(USERS[CU].ccSubmissions?.[name]||{});
+    const allMonths=Object.keys(statusSrc);
     // Get overall status summary
     let latestStatus='missing';
     let latestMonth='–';
@@ -1575,15 +1577,15 @@ function buildPLDashboard(){
       // Find most recent month with active status
       const sorted=allMonths.sort().reverse();
       latestMonth=sorted[0];
-      latestStatus=mu.status[latestMonth]?.st||'missing';
+      latestStatus=statusSrc[latestMonth]?.st||'missing';
     }
     // Count by status
-    let pendingCount=allMonths.filter(m=>['submitted','waiting_cc','cc_confirmed'].includes(mu.status[m]?.st||'')).length;
-    let waitingCCCount=allMonths.filter(m=>mu.status[m]?.st==='waiting_cc').length;
-    let ccConfirmedCount=allMonths.filter(m=>mu.status[m]?.st==='cc_confirmed').length;
-    let approvedCount=allMonths.filter(m=>['approved','forwarded','confirmed'].includes(mu.status[m]?.st||'')).length;
+    let pendingCount=allMonths.filter(m=>['submitted','waiting_cc','cc_confirmed'].includes(statusSrc[m]?.st||'')).length;
+    let waitingCCCount=allMonths.filter(m=>statusSrc[m]?.st==='waiting_cc').length;
+    let ccConfirmedCount=allMonths.filter(m=>statusSrc[m]?.st==='cc_confirmed').length;
+    let approvedCount=allMonths.filter(m=>['approved','forwarded','confirmed'].includes(statusSrc[m]?.st||'')).length;
     // Check if this PL is CC on any submissions
-    const isCCOn=allMonths.filter(m=>mu.status[m]?.cc===CU&&['submitted','waiting_cc'].includes(mu.status[m]?.st||'')).length;
+    const isCCOn=allMonths.filter(m=>statusSrc[m]?.cc===CU&&['submitted','waiting_cc'].includes(statusSrc[m]?.st||'')).length;
     const tr=document.createElement('tr');
     let statusHtml='';
     if(isCCOn>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;background:#f59e0b;">👁 ${isCCOn} CC-Anfrage</span>`;
@@ -1592,15 +1594,17 @@ function buildPLDashboard(){
     if(pendingCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">${pendingCount} ausstehend</span>`;
     if(approvedCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">${approvedCount} bestätigt</span>`;
     if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
+    const profileAction=isRealMember?`openPersonProfile('${name}','s-pl')`:`openSubmissionDetail('${name}','${latestMonth}')`;
+    const profileLabel=isRealMember?'👁 Profil öffnen':'👁 CC-Abrechnung öffnen';
     tr.innerHTML=`
       <td>
-        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-pl')">${name}</div>
+        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="${profileAction}">${name}</div>
         <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
       </td>
       <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
       <td>${statusHtml}</td>
       <td>
-        <button class="btn-sm btn-primary" onclick="openPersonProfile('${name}','s-pl')">👁 Profil öffnen</button>
+        <button class="btn-sm btn-primary" onclick="${profileAction}">${profileLabel}</button>
         <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${latestMonth}')">⬇ Excel</button>
       </td>`;
     tbody.appendChild(tr);
