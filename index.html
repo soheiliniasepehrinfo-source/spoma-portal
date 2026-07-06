@@ -995,8 +995,8 @@ function selectTable(n){
 }
 
 function openTable(){
-  const pl=document.getElementById('ch-pl').value;
-  if(!pl){toast('Bitte Projektleiter auswählen!','err');return;}
+  const pl=USERS[CU]?.pl||'';
+  if(!pl){toast('Kein Projektleiter im Profil hinterlegt — bitte Admin kontaktieren.','err');return;}
   const monat=document.getElementById('ch-monat').value;
   const jahr=document.getElementById('ch-jahr').value;
   curMonth=monat+' '+jahr;
@@ -1174,15 +1174,19 @@ async function saveT1Draft(){
   try{
     const existing=await db.collection('submissions').doc(docId).get();
     const prev=existing.exists?existing.data():{};
+    // If PL/Admin is editing someone else's already-submitted sheet, keep the existing status
+    // (submitted/waiting_cc/cc_confirmed/approved/etc.) instead of downgrading it to 'draft'.
+    const isEditingSomeoneElse=isEditingForOther||(CU!==targetName);
+    const keepSt=isEditingSomeoneElse&&prev.st&&prev.st!=='missing';
     const draftData={
-      st:'draft', stamp:'pending',
+      st:keepSt?prev.st:'draft', stamp:keepSt?(prev.stamp||'pending'):'pending',
       pl, cc:cc||null, tbl:1,
       employeeName:targetName, month:targetMonth,
       savedAt:now(),
       tableData:gatherT1Data(),
       signatures:gatherSignatures('t1'),
       originalSignatures:prev.originalSignatures||prev.signatures||{},
-      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'saved_draft'}]
+      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:isEditingSomeoneElse?'edited':'saved_draft'}]
     };
     await db.collection('submissions').doc(docId).set(draftData,{merge:true});
     if(!USERS[targetName].status)USERS[targetName].status={};
@@ -1201,15 +1205,17 @@ async function saveT2Draft(){
   try{
     const existing=await db.collection('submissions').doc(docId).get();
     const prev=existing.exists?existing.data():{};
+    const isEditingSomeoneElse2=isEditingForOther||(CU!==targetName);
+    const keepSt2=isEditingSomeoneElse2&&prev.st&&prev.st!=='missing';
     const draftData={
-      st:'draft', stamp:'pending',
+      st:keepSt2?prev.st:'draft', stamp:keepSt2?(prev.stamp||'pending'):'pending',
       pl, cc:selCC||null, tbl:2,
       employeeName:targetName, month:targetMonth,
       savedAt:now(),
       tableData:gatherT2Data(),
       signatures:gatherSignatures('t2'),
       originalSignatures:prev.originalSignatures||prev.signatures||{},
-      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:'saved_draft'}]
+      editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:isEditingSomeoneElse2?'edited':'saved_draft'}]
     };
     await db.collection('submissions').doc(docId).set(draftData,{merge:true});
     if(!USERS[targetName].status)USERS[targetName].status={};
