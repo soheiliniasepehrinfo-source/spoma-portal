@@ -2283,8 +2283,13 @@ async function admResetPw(n){
 async function admRemove(n){
   if(!isAdmin(CU)){toast('Keine Berechtigung.','err');return;}
   if(n===CU){toast('Nicht möglich.','err');return;}
-  if(!confirm(n+' wirklich loeschen? Alle Abrechnungen bleiben erhalten.'))return;
+  if(!confirm(n+' wirklich löschen? Diese Person UND alle ihre Abrechnungen werden dauerhaft gelöscht.'))return;
   try{
+    // Delete all submission records belonging to this person (so they don't reappear if the name is reused)
+    const subsSnap=await db.collection('submissions').where('employeeName','==',n).get();
+    const delPromises=[];
+    subsSnap.forEach(d=>delPromises.push(d.ref.delete()));
+    await Promise.all(delPromises);
     // Delete from Firestore
     await db.collection('users').doc(n).delete();
     // Remove from PL members list in Firestore
@@ -2293,7 +2298,7 @@ async function admRemove(n){
       await fsSetUser(USERS[n].pl,{members:USERS[USERS[n].pl].members||{}});
     }
     delete USERS[n];
-    toast('🗑 '+n+' dauerhaft gelöscht.');
+    toast('🗑 '+n+' und alle Abrechnungen dauerhaft gelöscht.');
     buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
