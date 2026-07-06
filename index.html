@@ -1245,7 +1245,7 @@ async function submitT1(){
   const subData={st:newSt,stamp:isEditing?(prevSub1.stamp||'pending'):'pending',
     pl,cc:cc||null,tbl:1,
     submittedAt:prevSub1.submittedAt||now(),
-    editedAt:isEditing?now():undefined,
+    editedAt:isEditing?now():null,
     employeeName:targetName,month:targetMonth,
     tableData:gatherT1Data(),
     signatures:newSigs1,
@@ -1255,20 +1255,23 @@ async function submitT1(){
   // Save to Firestore
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
-  await db.collection('submissions').doc(docId).set(subData,{merge:true});
-  if(!USERS[targetName].status)USERS[targetName].status={};
-  USERS[targetName].status[targetMonth]=subData;
-  if(USERS[targetName].locked)delete USERS[targetName].locked[targetMonth];
-  // Add edit history
-  const prevDoc=await db.collection('submissions').doc(docId).get();
-  const prevHist=prevDoc.exists?(prevDoc.data().editHistory||[]):[];
-  const prevOrigSigs=prevDoc.exists?(prevDoc.data().originalSignatures||{}):{}; 
-  // Preserve original signatures - NEVER overwrite
-  if(Object.keys(prevOrigSigs).length) subData.originalSignatures=prevOrigSigs;
-  subData.editHistory=[...prevHist,{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'edited'}];
+  try{
+    await db.collection('submissions').doc(docId).set(subData,{merge:true});
+    if(!USERS[targetName].status)USERS[targetName].status={};
+    USERS[targetName].status[targetMonth]=subData;
+    if(USERS[targetName].locked)delete USERS[targetName].locked[targetMonth];
+    // Add edit history
+    const prevDoc=await db.collection('submissions').doc(docId).get();
+    const prevHist=prevDoc.exists?(prevDoc.data().editHistory||[]):[];
+    const prevOrigSigs=prevDoc.exists?(prevDoc.data().originalSignatures||{}):{}; 
+    // Preserve original signatures - NEVER overwrite
+    if(Object.keys(prevOrigSigs).length) subData.originalSignatures=prevOrigSigs;
+    subData.editHistory=[...prevHist,{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'edited'}];
+  }catch(e){toast('Fehler beim Einreichen: '+e.message,'err');return;}
   // Reset editing state
   isEditingForOther=false;editingFor=null;editingMonth=null;
-  toast('✅ Tabelle 1 für '+targetMonth+' ('+targetName+') gespeichert!');
+  if(targetName===CU&&!isEditing){toast('✅ Erfolgreich eingereicht! Tabelle 1 für '+targetMonth+' wurde an '+pl+' gesendet.');}
+  else{toast('✅ Tabelle 1 für '+targetMonth+' ('+targetName+') gespeichert!');}
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   else openT1();
 }
@@ -1425,7 +1428,7 @@ async function submitT2(){
   const subData={st:newSt2,stamp:isEditing2?(prevSub2.stamp||'pending'):'pending',
     pl,cc:cc2||selCC||null,tbl:2,
     submittedAt:prevSub2.submittedAt||now(),
-    editedAt:isEditing2?now():undefined,
+    editedAt:isEditing2?now():null,
     employeeName:targetName,month:targetMonth,
     tableData:gatherT2Data(),
     signatures:newSigs2,
@@ -1434,11 +1437,14 @@ async function submitT2(){
     editHistory:[...prevHist2,{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:newAction2}]};
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
-  await db.collection('submissions').doc(docId).set(subData,{merge:true});
-  if(!USERS[targetName].status)USERS[targetName].status={};
-  USERS[targetName].status[targetMonth]=subData;
+  try{
+    await db.collection('submissions').doc(docId).set(subData,{merge:true});
+    if(!USERS[targetName].status)USERS[targetName].status={};
+    USERS[targetName].status[targetMonth]=subData;
+  }catch(e){toast('Fehler beim Einreichen: '+e.message,'err');return;}
   isEditingForOther=false;editingFor=null;editingMonth=null;
-  toast('✅ Tabelle 2 für '+targetMonth+' ('+targetName+') gespeichert!');
+  if(targetName===CU&&!isEditing2){toast('✅ Erfolgreich eingereicht! Tabelle 2 für '+targetMonth+' wurde an '+pl+' gesendet.');}
+  else{toast('✅ Tabelle 2 für '+targetMonth+' ('+targetName+') gespeichert!');}
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   const sb=document.getElementById('t2-badge');sb.className='badge b-sent';sb.textContent='Eingereicht';
   document.getElementById('t2-notif').innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
