@@ -591,7 +591,7 @@ optgroup{font-weight:700;}
 <div id="s-pl-detail" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Abrechnung prüfen</div></div></div>
-  <div class="topbar-actions"><button onclick="go('s-pl')">← Zurück</button></div>
+  <div class="topbar-actions"><button id="pld-back-btn" onclick="go('s-pl')">← Zurück</button></div>
 </div>
 <div class="content">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -617,7 +617,7 @@ optgroup{font-weight:700;}
 <div id="s-history" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Meine Abrechnungen</div></div></div>
-  <div class="topbar-actions"><button onclick="goBack()">← Zurück</button></div>
+  <div class="topbar-actions"><button onclick="go(isPL(USERS[CU])?'s-pl':isAdm(USERS[CU])?'s-admin':'s-choice')">← Zurück</button></div>
 </div>
 <div class="content"><div class="card gold-left">
   <div class="section-title" style="margin-bottom:11px;">Übersicht — alle Monate 2026</div>
@@ -1678,6 +1678,8 @@ async function openPersonProfile(name, fromScreen){
 async function openSubmissionDetail(name, month){
   curDetail = name; curMonth = month;
   go('s-pl-detail');
+  const backBtnOSD=document.getElementById('pld-back-btn');
+  if(backBtnOSD) backBtnOSD.setAttribute('onclick',"go('s-pl')");
   document.getElementById('pld-name').textContent = name + ' · ' + month;
   document.getElementById('pld-badge').className = 'badge b-sent';
   document.getElementById('pld-badge').textContent = 'Wird geladen...';
@@ -1720,6 +1722,8 @@ async function openPLDetail(name,month,e){
   if(e)e.stopPropagation();
   curDetail=name;curMonth=month;
   go('s-pl-detail');
+  const backBtnOPD=document.getElementById('pld-back-btn');
+  if(backBtnOPD) backBtnOPD.setAttribute('onclick',"go('s-pl')");
   document.getElementById('pld-name').textContent=name+' · '+month;
   document.getElementById('pld-badge').className='badge b-sent';
   document.getElementById('pld-badge').textContent='Wird geladen...';
@@ -2029,10 +2033,10 @@ async function showHistory(){
     const div=document.createElement('div');div.className='hist-item';
     let btns='';
     if(canEdit){
-      btns+=`<button class="btn-sm btn-primary" onclick="reopenAndEdit('${month}',${entry?.tbl||1})">✏ ${entry?'Bearbeiten':'Ausfüllen'}</button>`;
+      btns+=`<button class="btn-sm btn-primary" onclick="reopenAndEdit('${month}',${entry?.tbl||0})">✏ ${entry?'Bearbeiten':'Ausfüllen'}</button>`;
     } else if(noTableData){
       // Old submission without full data - prompt to resubmit
-      btns+=`<button class="btn-sm btn-warn" onclick="reopenAndEdit('${month}',${entry?.tbl||1})">⚠ Neu einreichen</button>`;
+      btns+=`<button class="btn-sm btn-warn" onclick="reopenAndEdit('${month}',${entry?.tbl||0})">⚠ Neu einreichen</button>`;
       btns+=`<button class="btn-sm" onclick="viewMySubmission('${month}')">👁 Ansehen</button>`;
     } else {
       btns+=`<button class="btn-sm" onclick="viewMySubmission('${month}')">👁 Ansehen</button>`;
@@ -2049,7 +2053,7 @@ async function showHistory(){
 }
 
 function reopenAndEdit(month,tbl){
-  curMonth=month;selTable=tbl||1;selPL=USERS[CU]?.pl||'';
+  curMonth=month;selTable=tbl||((isPL(USERS[CU])||isAdm(USERS[CU]))?2:1);selPL=USERS[CU]?.pl||'';
   if(USERS[CU]?.status?.[month]){USERS[CU].status[month].st='unlocked';}
   if(selTable===1)openT1();else openT2();
 }
@@ -2092,6 +2096,8 @@ Der Benutzer bleibt im System — nur die PL-Zuweisung wird entfernt.`)){
 async function viewMySubmission(month){
   prevScr='s-history';
   go('s-pl-detail');
+  const backBtn=document.getElementById('pld-back-btn');
+  if(backBtn) backBtn.setAttribute('onclick','goBack()');
   curDetail=CU;curMonth=month;
   document.getElementById('pld-name').textContent=CU+' · '+month;
   document.getElementById('pld-badge').className='badge b-miss';
