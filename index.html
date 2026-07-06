@@ -366,7 +366,7 @@ optgroup{font-weight:700;}
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="t1-sub"></div></div></div>
   <div class="topbar-actions">
-    <button onclick="go('s-choice')">← Zurück</button>
+    <button onclick="goBack()">← Zurück</button>
     <button onclick="openCPW('s-t1')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
   </div>
@@ -445,7 +445,7 @@ optgroup{font-weight:700;}
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="t2-sub"></div></div></div>
   <div class="topbar-actions">
-    <button onclick="go('s-choice')">← Zurück</button>
+    <button onclick="goBack()">← Zurück</button>
     <button onclick="openCPW('s-t2')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
   </div>
@@ -1003,6 +1003,7 @@ function openTable(){
   const jahr=document.getElementById('ch-jahr').value;
   curMonth=monat+' '+jahr;
   selPL=pl;selCC=document.getElementById('ch-cc').value;
+  prevScr='s-choice';
   if(selTable===1)openT1();else openT2();
 }
 
@@ -2086,6 +2087,7 @@ async function showHistory(year){
 function reopenAndEdit(month,tbl){
   curMonth=month;selTable=tbl||((isPL(USERS[CU])||isAdm(USERS[CU]))?2:1);selPL=USERS[CU]?.pl||'';
   if(USERS[CU]?.status?.[month]){USERS[CU].status[month].st='unlocked';}
+  prevScr='s-history';
   if(selTable===1)openT1();else openT2();
 }
 
