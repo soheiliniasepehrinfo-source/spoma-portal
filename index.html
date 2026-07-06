@@ -1238,7 +1238,7 @@ async function submitT1(){
   try{const eDoc=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
     if(eDoc.exists){prevSub1=eDoc.data();origSigs1=prevSub1.originalSignatures||prevSub1.signatures||{};}}catch(e){}
   // If PL/Admin is editing, keep existing status; only employee resets to submitted
-  const isEditing=isEditingForOther||(CU!==targetName);
+  const isEditing=(CU!==targetName);
   const newSt=isEditing?(prevSub1.st||'submitted'):'submitted';
   const newAction=isEditing?'edited':'submitted';
   const prevHist1=prevSub1.editHistory||[];
@@ -1421,7 +1421,7 @@ async function submitT2(){
   let origSigs2={};let prevSub2={};
   try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
     if(eDoc2.exists){prevSub2=eDoc2.data();origSigs2=prevSub2.originalSignatures||prevSub2.signatures||{};}}catch(e){}
-  const isEditing2=isEditingForOther||(CU!==targetName);
+  const isEditing2=(CU!==targetName);
   const newSt2=isEditing2?(prevSub2.st||'submitted'):'submitted';
   const newAction2=isEditing2?'edited':'submitted';
   const prevHist2=prevSub2.editHistory||[];
