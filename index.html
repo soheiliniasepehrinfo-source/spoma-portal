@@ -1842,7 +1842,8 @@ async function doApprove(){
     const hasCC=!!(sub.cc&&sub.cc!=='');
     const currentSt=sub.st||'missing';
     // Permission check
-    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    const isOwnNoPL=(CU===sub.employeeName&&!sub.pl);
+    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc)||isOwnNoPL;
     if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
     let upd={};
     const hist=[...(sub.editHistory||[])];
@@ -1860,6 +1861,12 @@ async function doApprove(){
         mainApprovedBy:CU,mainApprovedAt:now()};
       hist.push({by:CU,at:now(),role:'admin',action:'approved_both_as_admin'});
       toast('✅ Admin: Beide Bestätigungen gesetzt. Jetzt "📤 An Buchhaltung".');
+
+    } else if(isOwnNoPL&&currentSt==='submitted'){
+      // PL confirming his own MA — he has no main PL above him
+      upd={st:'approved',stamp:'approved',mainApprovedBy:CU,mainApprovedAt:now()};
+      hist.push({by:CU,at:now(),role:'self_pl',action:'approved_own'});
+      toast('✅ Bestätigt! Jetzt "📤 An Buchhaltung" klicken.');
 
     } else if(CU===sub.cc&&(currentSt==='submitted'||currentSt==='waiting_cc')){
       // CC PL confirms
