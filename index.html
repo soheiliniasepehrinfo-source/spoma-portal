@@ -785,6 +785,7 @@ let USERS = {};
 let SUBMISSIONS = {};
 
 async function loadAllData(){
+  await ensureAuth();
   USERS = await fsGetAllUsers();
   // Initialize status and members
   Object.keys(USERS).forEach(name=>{
@@ -2960,6 +2961,7 @@ function exportAllExcel(){
 <!-- Firebase SDK — loaded last so DOM is ready -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
 // Toggle password visibility
 function togglePw(inputId, btn){
@@ -2981,6 +2983,25 @@ const firebaseConfig={
 firebase.initializeApp(firebaseConfig);
 const db=firebase.firestore();
 
+// Anonymous auth — required so Firestore rules can check request.auth != null
+let AUTH_READY=null;
+function ensureAuth(){
+  if(!AUTH_READY){
+    AUTH_READY=new Promise((resolve)=>{
+      firebase.auth().onAuthStateChanged(function(user){
+        if(user){resolve(user);}
+        else{
+          firebase.auth().signInAnonymously().catch(function(e){
+            console.error('Anon auth failed:',e);
+            resolve(null);
+          });
+        }
+      });
+    });
+  }
+  return AUTH_READY;
+}
+
 // Firestore helpers
 async function fsGetUser(n){try{const d=await db.collection('users').doc(n).get();return d.exists?d.data():null;}catch(e){return null;}}
 async function fsSetUser(n,data){try{await db.collection('users').doc(n).set(data,{merge:true});}catch(e){console.error(e);}}
@@ -2989,6 +3010,7 @@ async function fsGetAllSubmissions(){try{const s=await db.collection('submission
 
 // Seed admins
 async function seedAdmins(){
+  await ensureAuth();
   const admins=[
     {name:'Sepehr Soheilinia',role:'admin_pl',nr:'PL01',pw:'Sepehr Soheilinia'},
     {name:'Christin Frank',role:'admin',nr:'',pw:'Christin Frank'},
