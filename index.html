@@ -1230,7 +1230,7 @@ async function submitT1(){
   const targetName = (isEditingForOther && editingFor) ? editingFor : CU;
   const targetMonth = (isEditingForOther && editingMonth) ? editingMonth : curMonth;
   const u=USERS[targetName]||USERS[CU];
-  const pl=selPL||u.pl||document.getElementById('t1-pl')?.value;
+  const pl=selPL||u.pl||document.getElementById('t1-pl')?.value||null;
   const cc=document.getElementById('t1-cc')?.value||selCC||'';
   if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs1=gatherSignatures('t1');
@@ -1414,7 +1414,7 @@ async function submitT2(){
   const targetName = (isEditingForOther && editingFor) ? editingFor : CU;
   const targetMonth = (isEditingForOther && editingMonth) ? editingMonth : curMonth;
   const u=USERS[targetName]||USERS[CU];
-  const pl=selPL||u.pl||document.getElementById('t2-pl')?.value;
+  const pl=selPL||u.pl||document.getElementById('t2-pl')?.value||null;
   const cc2=document.getElementById('t2-cc')?.value||selCC||'';
   if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs2=gatherSignatures('t2');
