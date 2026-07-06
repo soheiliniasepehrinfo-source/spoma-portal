@@ -1166,7 +1166,7 @@ function buildT1BezTable(){
 async function saveT1Draft(){
   const u=USERS[CU];
   const pl=selPL||u.pl;
-  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
   const cc=document.getElementById('t1-cc')?.value||selCC;
   const targetName=isEditingForOther&&editingFor?editingFor:CU;
   const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
@@ -1194,7 +1194,7 @@ async function saveT1Draft(){
 async function saveT2Draft(){
   const u=USERS[CU];
   const pl=selPL||u.pl;
-  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
   const targetName=isEditingForOther&&editingFor?editingFor:CU;
   const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
@@ -1226,7 +1226,7 @@ async function submitT1(){
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl||document.getElementById('t1-pl')?.value;
   const cc=document.getElementById('t1-cc')?.value||selCC||'';
-  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs1=gatherSignatures('t1');
   let origSigs1={};let prevSub1={};
   try{const eDoc=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
@@ -1407,7 +1407,7 @@ async function submitT2(){
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl||document.getElementById('t2-pl')?.value;
   const cc2=document.getElementById('t2-cc')?.value||selCC||'';
-  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs2=gatherSignatures('t2');
   let origSigs2={};let prevSub2={};
   try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
