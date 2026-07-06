@@ -1166,7 +1166,7 @@ function buildT1BezTable(){
 async function saveT1Draft(){
   const u=USERS[CU];
   const pl=selPL||u.pl;
-  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
   const cc=document.getElementById('t1-cc')?.value||selCC;
   const targetName=isEditingForOther&&editingFor?editingFor:CU;
   const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
@@ -1194,7 +1194,7 @@ async function saveT1Draft(){
 async function saveT2Draft(){
   const u=USERS[CU];
   const pl=selPL||u.pl;
-  if(!pl){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
+  if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
   const targetName=isEditingForOther&&editingFor?editingFor:CU;
   const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
@@ -1226,7 +1226,8 @@ async function submitT1(){
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl||document.getElementById('t1-pl')?.value;
   const cc=document.getElementById('t1-cc')?.value||selCC||'';
-  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
+  const targetIsPLorAdmin=isPL(u)||isAdm(u);
+  if(!pl&&!targetIsPLorAdmin){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs1=gatherSignatures('t1');
   let origSigs1={};let prevSub1={};
   try{const eDoc=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
@@ -1407,7 +1408,8 @@ async function submitT2(){
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl||document.getElementById('t2-pl')?.value;
   const cc2=document.getElementById('t2-cc')?.value||selCC||'';
-  if(!pl){toast('Bitte Projektleiter auswählen.','err');return;}
+  const targetIsPLorAdmin2=isPL(u)||isAdm(u);
+  if(!pl&&!targetIsPLorAdmin2){toast('Bitte Projektleiter auswählen.','err');return;}
   const newSigs2=gatherSignatures('t2');
   let origSigs2={};let prevSub2={};
   try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
@@ -1707,7 +1709,7 @@ async function openSubmissionDetail(name, month){
     const cBtn=document.getElementById('pld-confirm-btn');
     if(cBtn) cBtn.style.display=['approved','forwarded','confirmed'].includes(stSub)?'none':'inline-block';
     const sBtn=document.getElementById('pld-send-btn');
-    if(sBtn) sBtn.style.display=(stSub==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    if(sBtn) sBtn.style.display=(stSub==='approved'&&(isAdm(USERS[CU])||CU===sub.pl))?'inline-block':'none';
     const eBtn=document.getElementById('pld-edit-btn');
     if(eBtn) eBtn.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   } catch(err){
@@ -1751,7 +1753,7 @@ async function openPLDetail(name,month,e){
       confirmBtnPld.style.display=['approved','forwarded','confirmed'].includes(stPld)?'none':'inline-block';
     }
     const sendBtnPld=document.getElementById('pld-send-btn');
-    if(sendBtnPld) sendBtnPld.style.display=(stPld==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    if(sendBtnPld) sendBtnPld.style.display=(stPld==='approved'&&(isAdm(USERS[CU])||CU===sub.pl))?'inline-block':'none';
     const editBtnPld=document.getElementById('pld-edit-btn');
     if(editBtnPld) editBtnPld.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   }catch(err){
@@ -1762,7 +1764,7 @@ async function openPLDetail(name,month,e){
 
 
 function buildSigViewHTML(sub){
-  const sigs = sub.signatures || {};
+  const sigs = sub.originalSignatures && Object.keys(sub.originalSignatures).length ? sub.originalSignatures : (sub.signatures || {});
   if(!sigs.polier && !sigs.bauleiter) return '';
   let html = `<div class="sig-section">
     <div class="section-title">Unterschriften & Datum</div>
@@ -1808,6 +1810,11 @@ function buildTrackHtml(entry){
   if(entry.buchhaltung?.by)html+=`<span style="color:#0369a1;">✓✓ Buchhaltung bestätigt von ${entry.buchhaltung.by}: ${entry.buchhaltung.at||''}</span><br>`;
   else if(entry.confirmedBy)html+=`<span style="color:#0369a1;">✓✓ Buchhaltung bestätigt von ${entry.confirmedBy}: ${entry.confirmedAt||''}</span><br>`;
   if(entry.downloadedBy)html+=`⬇ Heruntergeladen von ${entry.downloadedBy}: ${entry.downloadedAt||''}<br>`;
+  // Show edit history (PL/Admin/Buchhaltung edits) — original employee signatures are never touched by this
+  const editEntries=(entry.editHistory||[]).filter(h=>h.action==='edited');
+  editEntries.forEach(h=>{
+    html+=`<span style="color:#7c3aed;">✏ Bearbeitet von ${h.by} (${h.role||''}): ${h.at||''}</span><br>`;
+  });
   html+='</div>';return html;
 }
 
@@ -1893,8 +1900,11 @@ async function sendToBuchhaltung(){
     const doc=await db.collection('submissions').doc(docId).get();
     if(!doc.exists){toast('Nicht gefunden.','err');return;}
     const sub=doc.data();
-    // Permission: Admin OR main PL OR CC PL
-    const allowed=isAdm(USERS[CU])||(CU===sub.pl)||(CU===sub.cc);
+    // Permission: Admin OR main PL only — CC PL may confirm the CC part but must NOT forward to Buchhaltung
+    const isMainPL=(CU===sub.pl);
+    const isCCOnly=(CU===sub.cc)&&!isMainPL;
+    const allowed=isAdm(USERS[CU])||isMainPL;
+    if(isCCOnly){toast('Als CC-Projektleiter kannst du nur die CC-Bestätigung geben. Nur der Haupt-Projektleiter kann an Buchhaltung senden.','err');return;}
     if(!allowed){toast('Keine Berechtigung für diese Abrechnung.','err');return;}
     if(sub.st!=='approved'){
       if(sub.st==='waiting_cc'){
@@ -2770,22 +2780,20 @@ function buildExcelT1(name,month,entry){
   // STATUS & COMPLETE AUDIT HISTORY
   rows.push(['STATUS & VERLAUF']);
   rows.push(['Status:',stL(entry?.st||'missing')]);
-  // New structured history
+  // Explicit confirmation lines — always shown regardless of action log
+  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||name]);
+  if(entry?.ccApprovedBy)rows.push(['CC-PL bestätigt von:',entry.ccApprovedBy,'am:',entry.ccApprovedAt||'–']);
+  if(entry?.mainApprovedBy||entry?.approvedBy)rows.push(['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy,'am:',entry?.mainApprovedAt||entry?.approvedAt||'–']);
+  if(entry?.rejectedBy)rows.push(['Abgelehnt von:',entry.rejectedBy,'am:',entry.rejectedAt||'–']);
+  if(entry?.forwarding?.by||entry?.forwardedBy)rows.push(['An Buchhaltung gesendet von:',entry?.forwarding?.by||entry?.forwardedBy,'am:',entry?.forwarding?.at||entry?.forwardedAt||'–']);
+  if(entry?.buchhaltung?.by||entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry?.buchhaltung?.by||entry?.confirmedBy,'am:',entry?.buchhaltung?.at||entry?.confirmedAt||'–']);
+  // Full raw action log
   const hist1=entry?.editHistory||[];
   if(hist1.length){
+    rows.push([]);
     rows.push(['AKTIONSPROTOKOLL']);
     rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
     hist1.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
-  } else {
-    // Legacy fields fallback
-    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
-    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
-    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
-    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
-    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
-    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
   }
   rows.push([]);
   // ORIGINAL SIGNATURES (never changed)
@@ -2844,20 +2852,20 @@ function buildExcelT2(name,month,entry){
   // STATUS & AUDIT HISTORY
   rows.push(['STATUS & VERLAUF']);
   rows.push(['Status:',stL(entry?.st||'missing')]);
+  // Explicit confirmation lines — always shown regardless of action log
+  if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||name]);
+  if(entry?.ccApprovedBy)rows.push(['CC-PL bestätigt von:',entry.ccApprovedBy,'am:',entry.ccApprovedAt||'–']);
+  if(entry?.mainApprovedBy||entry?.approvedBy)rows.push(['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy,'am:',entry?.mainApprovedAt||entry?.approvedAt||'–']);
+  if(entry?.rejectedBy)rows.push(['Abgelehnt von:',entry.rejectedBy,'am:',entry.rejectedAt||'–']);
+  if(entry?.forwarding?.by||entry?.forwardedBy)rows.push(['An Buchhaltung gesendet von:',entry?.forwarding?.by||entry?.forwardedBy,'am:',entry?.forwarding?.at||entry?.forwardedAt||'–']);
+  if(entry?.buchhaltung?.by||entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry?.buchhaltung?.by||entry?.confirmedBy,'am:',entry?.buchhaltung?.at||entry?.confirmedAt||'–']);
+  // Full raw action log
   const hist2=entry?.editHistory||[];
   if(hist2.length){
+    rows.push([]);
     rows.push(['AKTIONSPROTOKOLL']);
     rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
     hist2.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
-  } else {
-    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
-    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
-    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
-    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
-    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
-    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
   }
   rows.push([]);
   const sigs2 = entry?.originalSignatures || entry?.signatures || {};
