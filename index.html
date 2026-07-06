@@ -1042,7 +1042,7 @@ function openT1(){
   const locked=u.locked?.[curMonth];
   const sb=document.getElementById('t1-badge');sb.className='badge '+stB(locked?'unlocked':st);sb.textContent=locked?'Freigegeben':stL(st);
   document.getElementById('t1-stamp').innerHTML=(st!=='missing')?stampH(entry.stamp||st):'';
-  const canEdit=st==='missing'||st==='unlocked'||locked;
+  const canEdit=st==='missing'||st==='draft'||st==='unlocked'||locked;
   const btn=document.getElementById('t1-submit-btn');btn.disabled=!canEdit;btn.style.opacity=canEdit?'1':'0.4';
   document.getElementById('t1-locked-msg').style.display=(!canEdit&&st!=='missing')?'flex':'none';
   const ni=document.getElementById('t1-notif');
