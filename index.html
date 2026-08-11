@@ -194,6 +194,15 @@ canvas.sc{border:1px solid var(--border);border-radius:4px;background:#fff;curso
 .choice-card .cs{font-size:11px;color:var(--muted);}
 .choice-card .ctag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:3px;background:var(--gold);color:var(--black);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px;}
 
+/* ── TABLE 3 (NEW — ISOLATED, PL Kostenstellen-Anteile) ── */
+table.t3{width:100%;border-collapse:collapse;font-size:12px;}
+table.t3 th{background:var(--dark)!important;color:#fff!important;padding:6px 8px;border:1px solid #444!important;text-align:left;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;}
+table.t3 th.c,table.t3 td.c{text-align:center;}
+table.t3 td{padding:3px 5px;border:1px solid #E8E8E8!important;vertical-align:middle;background:#fff!important;color:var(--text)!important;}
+table.t3 input{background:#fff!important;color:var(--text)!important;border:1px solid #ddd!important;padding:4px 6px;border-radius:3px;width:100%;}
+table.t3 tfoot td{background:var(--dark)!important;color:#fff!important;font-weight:700;text-align:center;border-top:2px solid var(--gold)!important;}
+table.t3 .t3-del{background:none!important;border:none!important;color:var(--err)!important;cursor:pointer;font-size:14px;padding:0 4px!important;}
+
 /* ── DASHBOARD TABLE ── */
 table.dash{width:100%;border-collapse:collapse;font-size:12px;}
 table.dash th{background:var(--dark);color:#fff;padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;border-bottom:2px solid var(--gold);}
@@ -749,6 +758,107 @@ optgroup{font-weight:700;}
   </div>
   <div id="ad-track-log" class="track-log" style="display:none;"></div>
   <div id="ad-content"></div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════
+     TABELLE 2/3 CHOICE — NEW, ISOLATED
+     Only shown to PL/Admin when filling their OWN
+     Monatsabrechnung for a month with no submission yet.
+════════════════════════════════════════ -->
+<div id="s-t23" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Eigene Abrechnung</div></div></div>
+  <div class="topbar-actions">
+    <button onclick="go('s-history')">← Zurück</button>
+    <button onclick="go('s-login')">Abmelden</button>
+  </div>
+</div>
+<div class="content">
+  <div class="section-title" style="margin-bottom:12px;">Welche Tabelle für deine eigene Abrechnung — <span id="t23-month"></span>?</div>
+  <div class="choice-wrap">
+    <div class="choice-card" onclick="chooseOwnTable(2)">
+      <div class="ctag">Tabelle 2</div>
+      <div class="ct">Standard Monatsabrechnung</div>
+      <div class="cs">Baustelle je Tag, Auslöse versteuert / steuerfrei, Anteil %</div>
+    </div>
+    <div class="choice-card" onclick="chooseOwnTable(3)">
+      <div class="ctag">Tabelle 3</div>
+      <div class="ct">Anteile Lohnkosten nach Kostenstelle</div>
+      <div class="cs">Prozentuale Aufteilung deiner Arbeitszeit auf Kostenstellen</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════
+     TABLE 3 — NEW, ISOLATED
+     Anteile für Lohnkosten nach Projektleiter und Kostenstelle
+════════════════════════════════════════ -->
+<div id="s-t3" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="t3-sub"></div></div></div>
+  <div class="topbar-actions">
+    <button onclick="goBack()">← Zurück</button>
+    <button onclick="go('s-login')">Abmelden</button>
+  </div>
+</div>
+<div class="content">
+  <div id="t3-notif"></div>
+  <div class="section-title" style="margin-bottom:10px;">Tabelle 3 — Anteile für Lohnkosten nach Projektleiter und Kostenstelle</div>
+  <div class="hdr-box">
+    <div class="f"><label>Projektleiter</label><input type="text" id="t3-name" style="width:160px;" readonly></div>
+    <div class="f"><label>PN</label><input type="text" id="t3-nr" style="width:70px;" readonly></div>
+    <div class="f"><label>Monat</label><div style="font-weight:700;font-size:13px;" id="t3-monat"></div></div>
+    <div style="margin-left:auto;align-self:center;"><span class="badge b-miss" id="t3-badge">Nicht eingereicht</span></div>
+  </div>
+  <div style="overflow-x:auto;">
+  <table class="t3">
+    <thead><tr>
+      <th style="min-width:110px;">Kostenstelle</th>
+      <th style="min-width:200px;">Kurzbezeichnung</th>
+      <th class="c" style="width:110px;">Prozentual %</th>
+      <th style="width:28px;"></th>
+    </tr></thead>
+    <tbody id="t3-tbody"></tbody>
+    <tfoot><tr><td colspan="2" style="text-align:right;font-size:10px;font-weight:400;">Summen</td>
+      <td class="c" id="t3-sum-proz">0,00%</td><td></td></tr></tfoot>
+  </table>
+  </div>
+  <div style="margin-top:8px;">
+    <button class="btn-sm" onclick="t3AddRow()">+ Zeile hinzufügen</button>
+  </div>
+  <div class="sig-section"><div class="section-title">Unterschrift & Datum</div><div class="sig-row-s" id="t3-sigs"></div></div>
+  <div class="action-bar">
+    <button class="btn-primary" onclick="submitT3()">✈ EINREICHEN</button>
+    <button class="btn-dark" onclick="exportExcelT3()">⬇ Excel (.xlsx)</button>
+    <button onclick="saveT3Draft()">💾 Speichern</button>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════
+     TABLE 3 — REVIEW / CONFIRM — NEW, ISOLATED
+     Used by: PL viewing own submission (read-only)
+     and Admin/Buchhaltung reviewing (with Bestätigen/Ablehnen)
+════════════════════════════════════════ -->
+<div id="s-t3-review" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Tabelle 3 — Abrechnung prüfen</div></div></div>
+  <div class="topbar-actions"><button id="t3r-back-btn" onclick="go('s-history')">← Zurück</button></div>
+</div>
+<div class="content">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+    <div style="font-weight:800;font-size:14px;" id="t3r-name"></div>
+    <span class="badge" id="t3r-badge"></span>
+    <div id="t3r-stamp"></div>
+    <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="btn-sm btn-dark" onclick="exportExcelT3Detail()">⬇ Excel (.xlsx)</button>
+      <button class="btn-sm btn-danger" id="t3r-reject-btn" onclick="rejectT3()" style="display:none;">✗ Ablehnen</button>
+      <button class="btn-sm btn-success" id="t3r-confirm-btn" onclick="confirmT3()" style="display:none;">✓ Bestätigen</button>
+    </div>
+  </div>
+  <div id="t3r-content"></div>
 </div>
 </div>
 
@@ -1478,6 +1588,265 @@ function gatherT2Data(){
 }
 
 // ════════════════════════════════════════
+// TABLE 3 — NEW, ISOLATED
+// Anteile für Lohnkosten nach Projektleiter und Kostenstelle
+// Only for PL/Admin's own Monatsabrechnung. Does NOT touch T1/T2 logic.
+// ════════════════════════════════════════
+function openT3(){
+  go('s-t3');
+  const u=USERS[CU];
+  document.getElementById('t3-sub').textContent=CU+' · Tabelle 3 · '+curMonth;
+  document.getElementById('t3-name').value=CU;
+  document.getElementById('t3-nr').value=u.nr||'';
+  document.getElementById('t3-monat').textContent=curMonth;
+  const entry=(u.status&&u.status[curMonth])||{st:'missing'};
+  const st=entry.st||'missing';
+  const sb=document.getElementById('t3-badge');sb.className='badge '+stB(st);sb.textContent=stL(st);
+  const ni=document.getElementById('t3-notif');
+  if(st==='submitted')ni.innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
+  else ni.innerHTML='';
+  const tbody=document.getElementById('t3-tbody');tbody.innerHTML='';
+  const rows=(entry.tableData&&entry.tableData.length)?entry.tableData:Array.from({length:10},()=>({kst:'',kurz:'',proz:''}));
+  rows.forEach(r=>t3AddRow(r.kst,r.kurz,r.proz));
+  t3Recalc();
+  buildSigBoxT3('t3-sigs','t3',entry.originalSignatures||entry.signatures||{});
+}
+function t3AddRow(kst,kurz,proz){
+  const tbody=document.getElementById('t3-tbody');
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td><input type="text" class="t3-kst" value="${kst?String(kst).replace(/"/g,'&quot;'):''}"></td>
+    <td><input type="text" class="t3-kurz" value="${kurz?String(kurz).replace(/"/g,'&quot;'):''}"></td>
+    <td class="c"><input type="number" step="0.01" class="t3-proz" style="text-align:center;" value="${proz!==undefined&&proz!==''?proz:''}" oninput="t3Recalc()"></td>
+    <td class="c"><button class="t3-del" onclick="t3RemoveRow(this)" title="Zeile löschen">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+function t3RemoveRow(btn){
+  btn.closest('tr').remove();
+  t3Recalc();
+}
+function t3Recalc(){
+  let sum=0;
+  document.querySelectorAll('#t3-tbody tr').forEach(tr=>{
+    sum+=parseFloat(tr.querySelector('.t3-proz')?.value)||0;
+  });
+  const el=document.getElementById('t3-sum-proz');
+  if(el)el.textContent=fmt(sum)+'%';
+}
+function gatherT3Data(){
+  const rows=[];
+  document.querySelectorAll('#t3-tbody tr').forEach(tr=>{
+    const kst=tr.querySelector('.t3-kst')?.value.trim()||'';
+    const kurz=tr.querySelector('.t3-kurz')?.value.trim()||'';
+    const proz=tr.querySelector('.t3-proz')?.value||'';
+    if(kst||kurz||proz) rows.push({kst,kurz,proz});
+  });
+  return rows;
+}
+function buildSigBoxT3(containerId,prefix,existing){
+  const container=document.getElementById(containerId);if(!container)return;container.innerHTML='';
+  const today=new Date().toISOString().split('T')[0];
+  const id=prefix+'-pl';
+  const prev=(existing&&existing.pl)||{};
+  const div=document.createElement('div');div.className='sig-box-s';
+  div.innerHTML=`<div class="sl">Unterschrift Projektleiter</div>
+    <div class="sd"><label>Datum:</label><input type="date" id="d-${id}" value="${prev.datum||today}" style="width:140px!important;padding:4px 8px!important;"></div>
+    <div class="sig-mode">
+      <button class="active" id="btn-draw-${id}" onclick="setSigMode('${id}','draw')">✏ Zeichnen</button>
+      <button id="btn-type-${id}" onclick="setSigMode('${id}','type')">⌨ Tippen</button>
+    </div>
+    <div id="draw-${id}"><canvas class="sc" id="cv-${id}" width="280" height="70"></canvas>
+      <button class="sclear" onclick="clearCv('${id}')">Löschen</button></div>
+    <div id="type-${id}" style="display:none;">
+      <input type="text" class="stype" id="st-${id}" value="${prev.typed?String(prev.typed).replace(/"/g,'&quot;'):''}" placeholder="Name tippen..." style="width:100%;padding:6px 10px!important;font-size:15px!important;"></div>`;
+  container.appendChild(div);
+  setTimeout(()=>{
+    initCv(id);
+    if(prev.typed&&!prev.drawn) setSigMode(id,'type');
+  },50);
+}
+function gatherT3Signature(prefix){
+  const id=prefix+'-pl';
+  const dateEl=document.getElementById('d-'+id);
+  const typeEl=document.getElementById('st-'+id);
+  const canvas=document.getElementById('cv-'+id);
+  const drawDiv=document.getElementById('draw-'+id);
+  const isDrawMode=drawDiv&&drawDiv.style.display!=='none';
+  return {pl:{
+    datum:dateEl?dateEl.value:'',
+    typed:typeEl?typeEl.value:'',
+    drawn:(isDrawMode&&canvas)?canvas.toDataURL('image/png'):''
+  }};
+}
+async function saveT3Draft(){
+  const sigs=gatherT3Signature('t3');
+  const prev=USERS[CU]?.status?.[curMonth]||{};
+  const subData={
+    st:prev.st&&prev.st!=='missing'?prev.st:'draft',
+    stamp:prev.stamp||'draft',
+    tbl:3,
+    submittedAt:prev.submittedAt||null,
+    employeeName:CU,month:curMonth,
+    tableData:gatherT3Data(),
+    signatures:sigs,
+    originalSignatures:prev.originalSignatures||sigs,
+    editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'saved_draft'}]
+  };
+  const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  try{
+    await db.collection('submissions').doc(docId).set(subData,{merge:true});
+    if(!USERS[CU].status)USERS[CU].status={};
+    USERS[CU].status[curMonth]=subData;
+    toast('💾 Entwurf gespeichert.');
+  }catch(e){toast('Fehler beim Speichern: '+e.message,'err');}
+}
+async function submitT3(){
+  const sigs=gatherT3Signature('t3');
+  const prev=USERS[CU]?.status?.[curMonth]||{};
+  const subData={
+    st:'submitted',stamp:'pending',tbl:3,
+    submittedAt:now(),
+    employeeName:CU,month:curMonth,
+    tableData:gatherT3Data(),
+    signatures:sigs,
+    originalSignatures:Object.keys(prev.originalSignatures||{}).length?prev.originalSignatures:sigs,
+    editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'pl',action:'submitted'}]
+  };
+  const docId=CU.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  try{
+    await db.collection('submissions').doc(docId).set(subData,{merge:true});
+    if(!USERS[CU].status)USERS[CU].status={};
+    USERS[CU].status[curMonth]=subData;
+    toast('✅ Erfolgreich eingereicht! Tabelle 3 für '+curMonth+' wurde an die Buchhaltung gesendet.');
+    const sb=document.getElementById('t3-badge');sb.className='badge b-sent';sb.textContent='Eingereicht';
+    document.getElementById('t3-notif').innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
+  }catch(e){toast('Fehler beim Einreichen: '+e.message,'err');}
+}
+
+// ── T3 Review (read-only for PL, action buttons for Admin/Buchhaltung) ──
+async function viewT3(name,month,backScreen){
+  curDetail=name;curMonth=month;
+  go('s-t3-review');
+  const backBtn=document.getElementById('t3r-back-btn');
+  if(backBtn) backBtn.setAttribute('onclick',`go('${backScreen||'s-history'}')`);
+  document.getElementById('t3r-name').textContent=name+' · '+month+' · Tabelle 3';
+  document.getElementById('t3r-badge').className='badge b-miss';
+  document.getElementById('t3r-badge').textContent='Wird geladen...';
+  document.getElementById('t3r-stamp').innerHTML='';
+  document.getElementById('t3r-content').innerHTML='<div style="padding:20px;color:var(--muted);text-align:center;">⏳ Laden...</div>';
+  document.getElementById('t3r-confirm-btn').style.display='none';
+  document.getElementById('t3r-reject-btn').style.display='none';
+  try{
+    const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+    const doc=await db.collection('submissions').doc(docId).get();
+    const sub=doc.exists?doc.data():null;
+    if(!sub){document.getElementById('t3r-content').innerHTML='<div style="padding:20px;color:var(--err);">Nicht gefunden.</div>';return;}
+    if(!USERS[name])USERS[name]={status:{}};
+    if(!USERS[name].status)USERS[name].status={};
+    USERS[name].status[month]=sub;
+    const st=sub.st||'missing';
+    document.getElementById('t3r-badge').className='badge '+stB(st);
+    document.getElementById('t3r-badge').textContent=stL(st);
+    document.getElementById('t3r-stamp').innerHTML=stampH(sub.stamp||st);
+    document.getElementById('t3r-content').innerHTML=buildT3ViewHTML(sub,name,month);
+    // Only Admin/Buchhaltung can confirm or reject, and only while still 'submitted'
+    if(isAdm(USERS[CU])&&st==='submitted'){
+      document.getElementById('t3r-confirm-btn').style.display='inline-block';
+      document.getElementById('t3r-reject-btn').style.display='inline-block';
+    }
+  }catch(e){
+    document.getElementById('t3r-content').innerHTML='<div style="padding:20px;color:var(--err);">Fehler: '+e.message+'</div>';
+  }
+}
+function buildT3ViewHTML(sub,name,month){
+  const rows=(sub.tableData||[]).filter(r=>r.kst||r.kurz||r.proz);
+  const sigs=sub.originalSignatures||sub.signatures||{};
+  const pl=sigs.pl||{};
+  let sum=0;rows.forEach(r=>sum+=parseFloat(r.proz)||0);
+  let rowsHtml='';
+  rows.forEach(r=>{
+    rowsHtml+=`<tr><td>${r.kst||''}</td><td>${r.kurz||''}</td><td class="c">${r.proz!==''&&r.proz!==undefined?fmt(parseFloat(r.proz)||0)+'%':''}</td></tr>`;
+  });
+  if(!rows.length) rowsHtml='<tr><td colspan="3" style="text-align:center;color:var(--muted);">Keine Kostenstellen eingetragen.</td></tr>';
+  let sigHtml='<div style="color:var(--muted);font-size:11px;padding:8px 0;">Keine Unterschrift</div>';
+  if(pl.drawn){
+    sigHtml=`<img src="${pl.drawn}" style="max-width:280px;border:1px solid var(--border);border-radius:4px;display:block;" alt="Unterschrift">`;
+  } else if(pl.typed){
+    sigHtml=`<div class="stype" style="font-size:20px;">${pl.typed}</div>`;
+  }
+  return `
+  <div style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:14px;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr><td style="padding:4px 10px;color:var(--muted);font-weight:600;width:160px;">Projektleiter:</td><td style="padding:4px 10px;">${name}</td></tr>
+      <tr><td style="padding:4px 10px;color:var(--muted);font-weight:600;">PN:</td><td style="padding:4px 10px;">${USERS[name]?.nr||'–'}</td></tr>
+      <tr><td style="padding:4px 10px;color:var(--muted);font-weight:600;">Monat:</td><td style="padding:4px 10px;">${month}</td></tr>
+    </table>
+  </div>
+  <div style="overflow-x:auto;">
+  <table class="t3">
+    <thead><tr><th>Kostenstelle</th><th>Kurzbezeichnung</th><th class="c">Prozentual %</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr><td colspan="2" style="text-align:right;font-size:10px;font-weight:400;">Summen</td><td class="c">${fmt(sum)}%</td></tr></tfoot>
+  </table>
+  </div>
+  <div class="sig-section"><div class="section-title">Unterschrift & Datum</div>
+    <div class="sig-box-s" style="max-width:320px;">
+      <div class="sl">Unterschrift Projektleiter</div>
+      ${sigHtml}
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">Datum: ${pl.datum||'–'}</div>
+    </div>
+  </div>`;
+}
+async function confirmT3(){
+  if(!isAdm(USERS[CU])){toast('Keine Berechtigung.','err');return;}
+  const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const upd={
+      st:'confirmed',stamp:'confirmed',
+      buchhaltung:{confirmed:true,by:CU,at:now()},
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:'admin',action:'confirmed_buchhaltung_t3'}]
+    };
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('✅ Buchhaltung bestätigt!');
+    await viewT3(curDetail,curMonth,document.getElementById('t3r-back-btn').getAttribute('onclick').match(/'([^']+)'/)[1]);
+  }catch(e){toast('Fehler: '+e.message,'err');}
+}
+async function rejectT3(){
+  if(!isAdm(USERS[CU])){toast('Keine Berechtigung.','err');return;}
+  const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
+  try{
+    const doc=await db.collection('submissions').doc(docId).get();
+    if(!doc.exists){toast('Nicht gefunden.','err');return;}
+    const sub=doc.data();
+    const upd={
+      st:'rejected',stamp:'rejected',rejectedBy:CU,rejectedAt:now(),
+      editHistory:[...(sub.editHistory||[]),{by:CU,at:now(),role:'admin',action:'rejected_t3'}]
+    };
+    await db.collection('submissions').doc(docId).set(upd,{merge:true});
+    toast('Abgelehnt — Projektleiter kann neu einreichen.','err');
+    await viewT3(curDetail,curMonth,document.getElementById('t3r-back-btn').getAttribute('onclick').match(/'([^']+)'/)[1]);
+  }catch(e){toast('Fehler: '+e.message,'err');}
+}
+async function exportExcelT3(){
+  const sub=USERS[CU]?.status?.[curMonth];
+  const liveEntry={
+    tbl:3,
+    tableData:gatherT3Data(),
+    signatures:gatherT3Signature('t3'),
+    originalSignatures:sub?.originalSignatures||sub?.signatures||{},
+    submittedAt:sub?.submittedAt||'',
+    st:sub?.st||'draft',
+    ...sub
+  };
+  await buildAndDownloadExcel(CU,curMonth,liveEntry,3);
+}
+async function exportExcelT3Detail(){
+  if(curDetail&&curMonth) await exportPersonExcel(curDetail,curMonth);
+}
+
+// ════════════════════════════════════════
 // SIGNATURES
 // ════════════════════════════════════════
 function buildSigBoxes(containerId,prefix){
@@ -1718,6 +2087,7 @@ async function openSubmissionDetail(name, month){
       document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--err);">Keine Abrechnung gefunden.</div>';
       return;
     }
+    if(sub.tbl===3){ await viewT3(name,month,'s-pl'); return; } // NEW: Tabelle 3 uses its own isolated review screen
     if(!USERS[name]) USERS[name] = {status:{}};
     if(!USERS[name].status) USERS[name].status = {};
     USERS[name].status[month] = sub;
@@ -2090,10 +2460,27 @@ async function showHistory(year){
 }
 
 function reopenAndEdit(month,tbl){
-  curMonth=month;selTable=tbl||((isPL(USERS[CU])||isAdm(USERS[CU]))?2:1);selPL=USERS[CU]?.pl||'';
+  curMonth=month;selPL=USERS[CU]?.pl||'';
   if(USERS[CU]?.status?.[month]){USERS[CU].status[month].st='unlocked';}
   prevScr='s-history';
-  if(selTable===1)openT1();else openT2();
+  if(tbl){
+    // Existing submission — open the table it was actually filled in as (unchanged for tbl 1/2, new branch for tbl 3)
+    selTable=tbl;
+    if(selTable===1)openT1();else if(selTable===2)openT2();else openT3();
+    return;
+  }
+  // No existing submission for this month
+  if(isPL(USERS[CU])||isAdm(USERS[CU])){
+    // NEW: let PL/Admin choose Tabelle 2 or Tabelle 3 for their own Monatsabrechnung
+    document.getElementById('t23-month').textContent=month;
+    go('s-t23');
+  } else {
+    selTable=1;openT1();
+  }
+}
+function chooseOwnTable(n){
+  selTable=n;
+  if(n===2)openT2();else openT3();
 }
 
 async function removeFromPL(name, plName){
@@ -2147,6 +2534,7 @@ async function viewMySubmission(month){
     const doc=await db.collection('submissions').doc(docId).get();
     const sub=doc.exists?doc.data():null;
     if(!sub){document.getElementById('pld-content').innerHTML='<div style="padding:20px;color:var(--err);">Nicht gefunden.</div>';return;}
+    if(sub.tbl===3){ await viewT3(CU,month,'s-history'); return; } // NEW: Tabelle 3 uses its own isolated review screen
     const st=sub.st||'missing';
     document.getElementById('pld-name').textContent=CU+' · '+month+' · Tabelle '+(sub.tbl||'?');
     document.getElementById('pld-badge').className='badge '+stB(st);
@@ -2845,6 +3233,8 @@ async function buildAndDownloadExcel(name, month, entry, tbl){
 
     if(tbl===1){
       await buildSheetT1(wb, name, month, entry);
+    } else if(tbl===3){
+      await buildSheetT3(wb, name, month, entry);
     } else {
       await buildSheetT2(wb, name, month, entry);
     }
@@ -3384,6 +3774,126 @@ async function buildSheetT2(wb, name, month, entry){
 
   ws.addRow([]);
   row=ws.addRow(['Export von:',CU,'am:',now()]);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);
+}
+
+// ════════════════════════════════════════
+// TABLE 3 — EXCEL EXPORT — NEW, ISOLATED
+// Mirrors the on-screen T3 layout exactly (empty rows hidden)
+// ════════════════════════════════════════
+async function buildSheetT3(wb, name, month, entry){
+  const ws = wb.addWorksheet('Anteile Lohnkosten', {
+    pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0},
+  });
+
+  const td = (entry?.tableData||[]).filter(r=>r.kst||r.kurz||r.proz);
+  const sigs = entry?.originalSignatures||entry?.signatures||{};
+  const pl = sigs.pl||{};
+
+  ws.columns = [
+    {width:16},  // A: Kostenstelle
+    {width:28},  // B: Kurzbezeichnung
+    {width:14},  // C: Prozentual
+  ];
+
+  let row;
+
+  // Title
+  row=ws.addRow(['Anteile für Lohnkosten nach Projektleiter und Kostenstelle']);
+  ws.mergeCells('A1:C1');
+  row.getCell(1).font=xlFont(true,13,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_BLACK);
+  row.getCell(1).alignment=xlAlign('center','middle');
+  row.height=22;
+
+  ws.addRow([]);
+
+  // Info rows
+  row=ws.addRow(['Projektleiter',name,'']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  row.getCell(2).font=xlFont(true,10,XL_BLACK);
+  row.height=16;
+
+  row=ws.addRow(['PN:',USERS[name]?.nr||'–','']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  row.height=14;
+
+  row=ws.addRow(['Monat',month,'']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  row.getCell(2).font=xlFont(true,10,XL_BLACK);
+  row.height=16;
+
+  ws.addRow([]);
+
+  // Headers
+  row=ws.addRow(['Kostenstelle','Kurzbezeichnung','prozentual']);
+  row.height=18;
+  row.eachCell(cell=>{
+    cell.font=xlFont(true,9,XL_WHITE);
+    cell.fill=xlFill(XL_DGRAY);
+    cell.alignment=xlAlign('left','middle');
+    cell.border={bottom:{style:'medium',color:{argb:XL_GOLD}}};
+  });
+  row.getCell(3).alignment=xlAlign('center','middle');
+
+  // Data rows (empty rows hidden — only filled Kostenstellen appear)
+  let sum=0;
+  td.forEach(r=>{
+    const proz=parseFloat(r.proz)||0;
+    sum+=proz;
+    row=ws.addRow([r.kst||'',r.kurz||'',r.proz!==''&&r.proz!==undefined?(proz.toFixed(2).replace('.',',')+'%'):'']);
+    row.height=15;
+    row.eachCell(cell=>{
+      cell.border=xlBorder();
+      cell.font=xlFont(false,10,XL_BLACK);
+      cell.alignment=xlAlign('left','middle');
+    });
+    row.getCell(1).font=xlFont(true,10,'FF996600');
+    row.getCell(3).alignment=xlAlign('right','middle');
+  });
+
+  // Summen
+  row=ws.addRow(['Summen','',sum.toFixed(2).replace('.',',')+'%']);
+  row.eachCell(cell=>{cell.border={top:{style:'medium',color:{argb:'FF1C1C1C'}}};cell.font=xlFont(true,10,XL_BLACK);});
+  row.getCell(3).alignment=xlAlign('right','middle');
+  row.height=16;
+
+  ws.addRow([]);
+  ws.addRow([]);
+
+  // Unterschrift
+  row=ws.addRow(['Unterschrift Projektleiter','','']);
+  row.getCell(1).font=xlFont(false,9,'FF888888');
+  row.height=14;
+
+  if(pl.drawn){
+    try{
+      const imgId=wb.addImage({base64:pl.drawn, extension:'png'});
+      const sigRowNum=row.number+1;
+      ws.addImage(imgId, {tl:{col:0,row:sigRowNum-1}, ext:{width:180,height:55}});
+      ws.addRow([]);ws.addRow([]);ws.addRow([]);
+    }catch(e){ws.addRow([pl.typed||'','','']);}
+  } else if(pl.typed){
+    row=ws.addRow([pl.typed,'','']);
+    row.getCell(1).font={italic:true,size:14,name:'Arial',color:{argb:XL_BLACK}};
+  } else {
+    ws.addRow(['(keine Unterschrift)','','']);
+  }
+
+  row=ws.addRow(['Datum:',pl.datum||'–','']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  row.height=14;
+
+  ws.addRow([]);
+  row=ws.addRow(['Status:',stL(entry?.st||'missing'),'']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  if(entry?.buchhaltung?.by){
+    row=ws.addRow(['Buchhaltung bestätigt von:',entry.buchhaltung.by,'']);
+    row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  }
+
+  ws.addRow([]);
+  row=ws.addRow(['Export von:',CU,'am: '+now()]);
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
 }
 
