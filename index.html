@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SPOMA Portal — Monatsabrechnung</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <!-- Firebase loaded at bottom of page -->
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -2750,263 +2751,645 @@ function buildROTableHTML(month){
 // ════════════════════════════════════════
 // EXCEL EXPORT (Real .xlsx with SheetJS)
 // ════════════════════════════════════════
-function buildExcelT1(name,month,entry){
-  const td=entry?.tableData||[];
-  const rows=[
-    ['SPOMA Parkett und Ausbau GmbH'],
-    ['Monatsabrechnung — Tabelle 1 (Monteur, Azubi, etc.)'],
-    [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–','CC bestätigt von:',entry?.ccApprovedBy||'–','CC bestätigt am:',entry?.ccApprovedAt||'–'],
-    ['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy||'–','am:',entry?.mainApprovedAt||entry?.approvedAt||'–'],
-    ['Tarifgebiet:',entry?.tarif||'','','','','','','','','','','','','',''],
-    [],
-    // Header row
-    ['Tag','OST','WEST','BLN','Baustelle','Kostenstelle','Beginn/Ende','Fahrzeit h','Anwesenheit h','Gesamt h','Fahrzeit 50% Fahrer','Urlaub','Krank','Auslöse 18€','PKW km'],
-  ];
-  // Data rows from saved tableData
-  if(td.length){
-    td.forEach(r=>{
-      if(r.locked){
-        rows.push([r.day,'','','','Wochenende','','','','','','','','','','']);
-      } else {
-        const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
-        rows.push([
-          r.day,
-          r.ost?'X':'', r.west?'X':'', r.bln?'X':'',
-          r.baustelle||'', r.kst||'', r.zeit||'',
-          fahr||'', anwes||'', anwes||'',
-          fahr>0?(fahr*0.5).toFixed(2):'',
-          r.url?'X':'', r.krank?'X':'',
-          r.aus?'18 €':'', r.km||''
-        ]);
-      }
-    });
-  } else {
-    for(let d=1;d<=31;d++) rows.push([d,'','','','','','','','','','','','','','']);
+// ════════════════════════════════════════
+// EXCEL EXPORT — ExcelJS (full styling, 1:1 with portal)
+// ════════════════════════════════════════
+
+// SPOMA brand colors
+const XL_BLACK = 'FF1C1C1C';
+const XL_GOLD  = 'FFD4A843';
+const XL_WHITE = 'FFFFFFFF';
+const XL_GRAY  = 'FFF4F4F4';
+const XL_DGRAY = 'FF2A2A2A';
+const XL_LGOLD = 'FFFFF8E7';
+const XL_WKND  = 'FFE5E5E5';
+const XL_AUTO  = 'FFFFFDE7';
+const XL_GREEN = 'FFD1FAE5';
+const XL_RED   = 'FFFEE2E2';
+
+function xlFont(bold, size, color, name){
+  return {bold:!!bold, size:size||10, color:{argb:color||XL_BLACK}, name:name||'Arial'};
+}
+function xlFill(argb){
+  return {type:'pattern', pattern:'solid', fgColor:{argb:argb}};
+}
+function xlBorder(style){
+  const s={style:style||'thin',color:{argb:'FFCCCCCC'}};
+  return {top:s,left:s,bottom:s,right:s};
+}
+function xlBorderGold(){
+  const s={style:'medium',color:{argb:XL_GOLD}};
+  return {top:s,left:s,bottom:s,right:s};
+}
+function xlAlign(h,v){
+  return {horizontal:h||'left', vertical:v||'middle', wrapText:false};
+}
+
+async function exportExcelT1(){
+  const sub = USERS[CU]?.status?.[curMonth];
+  const liveEntry = {
+    tbl:1,
+    tableData: gatherT1Data(),
+    signatures: gatherSignatures('t1'),
+    originalSignatures: sub?.originalSignatures || sub?.signatures || {},
+    pl: selPL || USERS[CU]?.pl || '',
+    cc: document.getElementById('t1-cc')?.value || selCC || '',
+    submittedAt: sub?.submittedAt || '',
+    st: sub?.st || 'draft',
+    ...sub
+  };
+  await buildAndDownloadExcel(CU, curMonth, liveEntry, 1);
+}
+
+async function exportExcelT2(){
+  const sub = USERS[CU]?.status?.[curMonth];
+  const liveEntry = {
+    tbl:2,
+    tableData: gatherT2Data(),
+    signatures: gatherSignatures('t2'),
+    originalSignatures: sub?.originalSignatures || sub?.signatures || {},
+    pl: selPL || USERS[CU]?.pl || '',
+    cc: document.getElementById('t2-cc')?.value || selCC || '',
+    submittedAt: sub?.submittedAt || '',
+    st: sub?.st || 'draft',
+    ...sub
+  };
+  await buildAndDownloadExcel(CU, curMonth, liveEntry, 2);
+}
+
+async function exportPersonExcel(name, month){
+  const entry = USERS[name]?.status?.[month] || {};
+  // Try loading fresh from Firebase
+  try{
+    const docId = name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+    const doc = await db.collection('submissions').doc(docId).get();
+    if(doc.exists) Object.assign(entry, doc.data());
+  }catch(e){}
+  await buildAndDownloadExcel(name, month, entry, entry.tbl||1);
+}
+
+async function exportDetailExcel(){
+  if(curDetail && curMonth) await exportPersonExcel(curDetail, curMonth);
+}
+
+async function buildAndDownloadExcel(name, month, entry, tbl){
+  toast('⏳ Excel wird erstellt...');
+  try{
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'SPOMA Portal';
+    wb.created = new Date();
+
+    if(tbl===1){
+      await buildSheetT1(wb, name, month, entry);
+    } else {
+      await buildSheetT2(wb, name, month, entry);
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `SPOMA_${name.replace(/ /g,'_')}_${month.replace(/ /g,'_')}_T${tbl}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ Excel heruntergeladen!');
+  }catch(e){
+    console.error('Excel export error:', e);
+    toast('Fehler beim Excel Export: '+e.message, 'err');
   }
-  // Summe row
-  const sumFahr=td.reduce((s,r)=>s+(parseFloat(r.fahr)||0),0);
-  const sumAnwes=td.reduce((s,r)=>s+(parseFloat(r.anwes)||0),0);
-  const sumUrl=td.reduce((s,r)=>s+(r.url?1:0),0);
-  const sumKrank=td.reduce((s,r)=>s+(r.krank?1:0),0);
-  const sumAus=td.reduce((s,r)=>s+(r.aus?18:0),0);
-  const sumKm=td.reduce((s,r)=>s+(parseFloat(r.km)||0),0);
-  rows.push(['Summe','','','','','','',(sumFahr||''),(sumAnwes||''),(sumAnwes||''),(sumFahr>0?(sumFahr*0.5).toFixed(2):''),(sumUrl||''),(sumKrank||''),(sumAus?sumAus+' €':''),(sumKm||'')]);
-  rows.push([]);
-  // Zuordnung auf den Baustellen
-  rows.push(['ZUORDNUNG AUF DEN BAUSTELLEN']);
-  rows.push(['Baustelle','Kostenstelle','Anwesenheit h','Fahrzeit h','Summe h','Auslöse']);
-  const bsMap={};
+}
+
+async function buildSheetT1(wb, name, month, entry){
+  const ws = wb.addWorksheet('Monatsabrechnung', {
+    pageSetup:{paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0},
+    views:[{state:'normal'}]
+  });
+
+  const td = entry?.tableData || [];
+  const sigs = entry?.originalSignatures || entry?.signatures || {};
+
+  // Column widths (matching portal)
+  ws.columns = [
+    {width:5},   // A: Tag
+    {width:4},   // B: OST
+    {width:4},   // C: WEST
+    {width:4},   // D: BLN
+    {width:22},  // E: Baustelle
+    {width:10},  // F: KST
+    {width:14},  // G: Beginn/Ende
+    {width:8},   // H: FZ h
+    {width:8},   // I: Anw h
+    {width:8},   // J: Ges h
+    {width:8},   // K: FZ 50%
+    {width:6},   // L: URL
+    {width:6},   // M: Krank
+    {width:8},   // N: Ausl.
+    {width:8},   // O: PKW km
+  ];
+
+  let row;
+
+  // ── ROW 1: Title ──
+  row = ws.addRow(['SPOMA Parkett und Ausbau GmbH — Monatsabrechnung Tabelle 1']);
+  ws.mergeCells(`A1:O1`);
+  row.getCell(1).font = xlFont(true, 13, XL_WHITE);
+  row.getCell(1).fill = xlFill(XL_BLACK);
+  row.getCell(1).alignment = xlAlign('center','middle');
+  row.height = 22;
+
+  // ── ROW 2: Info ──
+  const tarif = entry?.tarif || '';
+  row = ws.addRow([
+    'Name:', name, '', 'Monat:', month, '', 'Personal-Nr:', USERS[name]?.nr||'–',
+    'PL:', entry?.pl||USERS[name]?.pl||'–', '', 'CC-PL:', entry?.cc||'–', '', ''
+  ]);
+  row.height = 16;
+  ['A2','D2','G2','J2','L2'].forEach(c=>{
+    ws.getCell(c).font = xlFont(true,9,XL_BLACK);
+    ws.getCell(c).fill = xlFill(XL_GRAY);
+  });
+  ['B2','E2','H2','K2','M2'].forEach(c=>{
+    ws.getCell(c).font = xlFont(false,9,XL_BLACK);
+  });
+
+  // ── ROW 3: Tarifgebiet ──
+  row = ws.addRow(['Tarifgebiet:', tarif||'OST', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+  row.height = 14;
+  ws.getCell('A3').font = xlFont(true,9,XL_BLACK);
+  ws.getCell('B3').font = xlFont(false,9,XL_BLACK);
+
+  // ── ROW 4: empty ──
+  ws.addRow([]);
+
+  // ── ROW 5+6: Headers ──
+  row = ws.addRow(['Tag','OST','WEST','BLN','Baustelle','KST','Beginn/Ende','FZ h','Anw h','Ges h','FZ 50%','URL','Krank','Ausl.','PKW km']);
+  row.height = 18;
+  row.eachCell(cell=>{
+    cell.font = xlFont(true,9,XL_WHITE);
+    cell.fill = xlFill(XL_DGRAY);
+    cell.alignment = xlAlign('center','middle');
+    cell.border = {bottom:{style:'medium',color:{argb:XL_GOLD}}};
+  });
+
+  // ── DATA ROWS ──
+  let sumFZ=0, sumAnw=0, sumURL=0, sumKrank=0, sumAus=0, sumKm=0;
+
   td.forEach(r=>{
-    if(r.locked||!r.baustelle)return;
+    const isWE = r.locked && (r.baustelle==='Wochenende'||r.baustelle==='');
+    const isFrei = r.baustelle==='Feiertag';
+    const isUrlaub = r.baustelle==='Urlaub';
+    const isKrank = r.baustelle==='Krankgeschrieben';
+    const fahr = parseFloat(r.fahr)||0;
+    const anwes = parseFloat(r.anwes)||0;
+    const ges = anwes||0;
+    const f50 = fahr>0?(fahr*0.5):0;
+
+    if(!isWE){
+      sumFZ+=fahr; sumAnw+=anwes;
+      sumURL+=r.url?1:0; sumKrank+=r.krank?1:0;
+      sumAus+=r.aus?18:0; sumKm+=parseFloat(r.km)||0;
+    }
+
+    const rowData = [
+      r.day,
+      r.ost?'✓':'', r.west?'✓':'', r.bln?'✓':'',
+      r.baustelle||'',
+      r.kst||'',
+      r.zeit||'',
+      fahr||'', anwes||'', ges||'',
+      f50||'',
+      r.url?'✓':'', r.krank?'✓':'',
+      r.aus?'18€':'', r.km||''
+    ];
+
+    row = ws.addRow(rowData);
+    row.height = 15;
+
+    // Row background
+    let bgColor = XL_WHITE;
+    if(isWE) bgColor = XL_WKND;
+    else if(isFrei||isUrlaub||isKrank) bgColor = XL_LGOLD;
+
+    row.eachCell((cell,ci)=>{
+      cell.fill = xlFill(bgColor);
+      cell.border = xlBorder('thin');
+      cell.font = xlFont(false,9,XL_BLACK);
+      cell.alignment = xlAlign(ci===1||ci>=8?'center':'left','middle');
+    });
+
+    // Tag column: bold
+    row.getCell(1).font = xlFont(true,9,isWE?'FF888888':XL_BLACK);
+
+    // Ges h column: gold background
+    if(!isWE && ges>0){
+      row.getCell(10).fill = xlFill(XL_AUTO);
+      row.getCell(10).font = xlFont(true,9,'FFCC8800');
+    }
+    // FZ 50%: orange
+    if(!isWE && f50>0){
+      row.getCell(11).fill = xlFill(XL_AUTO);
+      row.getCell(11).font = xlFont(true,9,'FFCC8800');
+    }
+    // Auslöse: yellow
+    if(r.aus){
+      row.getCell(14).fill = xlFill(XL_LGOLD);
+      row.getCell(14).font = xlFont(true,9,'FF856404');
+    }
+    // Wochenende: grey text
+    if(isWE){
+      row.getCell(5).font = xlFont(false,9,'FF888888');
+    }
+  });
+
+  // ── SUMME ROW ──
+  row = ws.addRow([
+    'Summe','','','','','','',
+    sumFZ||'', sumAnw||'', sumAnw||'',
+    sumFZ>0?parseFloat((sumFZ*0.5).toFixed(2)):'',
+    sumURL||'', sumKrank||'',
+    sumAus?sumAus+'€':'', sumKm||''
+  ]);
+  row.height = 16;
+  row.eachCell(cell=>{
+    cell.font = xlFont(true,9,XL_WHITE);
+    cell.fill = xlFill(XL_DGRAY);
+    cell.alignment = xlAlign('center','middle');
+    cell.border = {top:{style:'medium',color:{argb:XL_GOLD}}};
+  });
+  ws.getCell(`A${row.number}`).alignment = xlAlign('right','middle');
+
+  ws.addRow([]);
+
+  // ── ZUORDNUNG AUF DEN BAUSTELLEN ──
+  const bsMap = {};
+  td.forEach(r=>{
+    if(r.locked||!r.baustelle||r.baustelle==='Wochenende')return;
     const bs=r.baustelle;
     if(!bsMap[bs])bsMap[bs]={kst:r.kst||'',an:0,fahr:0,aus:0};
     bsMap[bs].an+=parseFloat(r.anwes)||0;
     bsMap[bs].fahr+=parseFloat(r.fahr)||0;
     bsMap[bs].aus+=r.aus?18:0;
   });
-  Object.entries(bsMap).forEach(([bs,data])=>{
-    rows.push([bs,data.kst,data.an.toFixed(2),data.fahr.toFixed(2),(data.an+data.fahr).toFixed(2),data.aus?data.aus+' €':'']);
+
+  // Zuordnung header
+  row = ws.addRow(['ZUORDNUNG AUF DEN BAUSTELLEN','','','','','','','','Baustelle','Bezeichnung','','','','','']);
+  row.height = 16;
+  ws.mergeCells(`A${row.number}:G${row.number}`);
+  ws.mergeCells(`I${row.number}:J${row.number}`);
+  row.getCell(1).font = xlFont(true,9,XL_WHITE);
+  row.getCell(1).fill = xlFill(XL_DGRAY);
+  row.getCell(9).font = xlFont(true,9,XL_WHITE);
+  row.getCell(9).fill = xlFill(XL_DGRAY);
+  row.getCell(10).font = xlFont(true,9,XL_WHITE);
+  row.getCell(10).fill = xlFill(XL_DGRAY);
+
+  // Zuordnung sub-header
+  row = ws.addRow(['Baustelle','Kostenstelle','','Anwesenheit h','Fahrzeit h','Summe h','Auslöse','','','','','','','','']);
+  row.height = 14;
+  [1,2,4,5,6,7].forEach(ci=>{
+    row.getCell(ci).font = xlFont(true,9,XL_WHITE);
+    row.getCell(ci).fill = xlFill(XL_BLACK);
+    row.getCell(ci).border = xlBorder();
   });
-  rows.push([]);
-  // Tracking
-  rows.push(['STATUS & VERLAUF']);
-  // STATUS & COMPLETE AUDIT HISTORY
-  rows.push(['STATUS & VERLAUF']);
-  rows.push(['Status:',stL(entry?.st||'missing')]);
-  // New structured history
-  const hist1=entry?.editHistory||[];
-  if(hist1.length){
-    rows.push(['AKTIONSPROTOKOLL']);
-    rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
-    hist1.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
-  } else {
-    // Legacy fields fallback
-    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
-    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
-    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
-    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
-    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
-    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+
+  // BS entries on left + Bezeichnung on right
+  const bsEntries = Object.entries(bsMap);
+  const bsNames = ['Feiertag','Krankgeschrieben','Urlaub','Wochenende',
+    'Baustelle 1','Baustelle 2','Baustelle 3','Baustelle 4','Baustelle 5',
+    'Baustelle 6','Baustelle 7','Baustelle 8','Baustelle 9','Baustelle 10'];
+
+  let totAn=0,totF=0,totAus=0;
+  const maxRows = Math.max(bsEntries.length, bsNames.length);
+
+  for(let i=0;i<maxRows;i++){
+    const entry2 = bsEntries[i];
+    const bsName = bsNames[i];
+    if(entry2){
+      const [bs,d]=entry2;
+      totAn+=d.an;totF+=d.fahr;totAus+=d.aus;
+      row = ws.addRow([
+        bs, d.kst||'', '',
+        d.an?parseFloat(d.an.toFixed(2)):'',
+        d.fahr?parseFloat(d.fahr.toFixed(2)):'',
+        parseFloat((d.an+d.fahr).toFixed(2)),
+        d.aus?d.aus+'€':'0,00 €',
+        '', bsName||'', '', '', '', '', '', ''
+      ]);
+    } else {
+      row = ws.addRow(['','','','','','','','',bsName||'','','','','','','']);
+    }
+    row.height = 14;
+    [1,2,4,5,6,7].forEach(ci=>{
+      row.getCell(ci).border = xlBorder();
+      row.getCell(ci).font = xlFont(false,9,XL_BLACK);
+      if(ci===2) row.getCell(ci).font = xlFont(true,9,'FF996600');
+    });
+    [9,10].forEach(ci=>{
+      row.getCell(ci).border = xlBorder();
+      row.getCell(ci).font = xlFont(false,9,XL_BLACK);
+      row.getCell(ci).fill = xlFill(XL_GRAY);
+    });
   }
-  rows.push([]);
-  // ORIGINAL SIGNATURES (never changed)
-  const sigs1 = entry?.originalSignatures || entry?.signatures || {};
-  rows.push(['UNTERSCHRIFTEN & DATUM (Original)']);
-  rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
-  rows.push(['Datum:', sigs1.polier?.datum||'–', sigs1.bauleiter?.datum||'–']);
-  rows.push(['Name (getippt):', sigs1.polier?.typed||'–', sigs1.bauleiter?.typed||'–']);
-  rows.push(['Handunterschrift:', sigs1.polier?.drawn&&sigs1.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
-    sigs1.bauleiter?.drawn&&sigs1.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
-  rows.push([]);
-  rows.push(['Export von:',CU,'am:',now()]);
-  return rows;
+
+  // Zuordnung totals
+  row = ws.addRow(['Summe gesamt','','',
+    parseFloat(totAn.toFixed(2)), parseFloat(totF.toFixed(2)), parseFloat((totAn+totF).toFixed(2)),
+    totAus?totAus+'€':'0,00 €','','','','','','','',''
+  ]);
+  row.height=15;
+  [1,4,5,6,7].forEach(ci=>{
+    row.getCell(ci).font=xlFont(true,9,XL_WHITE);
+    row.getCell(ci).fill=xlFill(XL_DGRAY);
+    row.getCell(ci).border={top:{style:'medium',color:{argb:XL_GOLD}}};
+  });
+  row.getCell(1).alignment=xlAlign('right','middle');
+
+  ws.addRow([]);
+
+  // ── UNTERSCHRIFTEN ──
+  row = ws.addRow(['UNTERSCHRIFTEN & DATUM','','','','','','','','','','','','','','']);
+  ws.mergeCells(`A${row.number}:O${row.number}`);
+  row.getCell(1).font = xlFont(true,10,XL_WHITE);
+  row.getCell(1).fill = xlFill(XL_DGRAY);
+  row.height = 16;
+
+  const polier = sigs.polier||{};
+  const bauleiter = sigs.bauleiter||{};
+
+  row = ws.addRow(['Unterschrift Polier','','','','','','','Unterschrift Bauleiter','','','','','','','']);
+  ws.mergeCells(`A${row.number}:G${row.number}`);
+  ws.mergeCells(`H${row.number}:O${row.number}`);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK); row.getCell(1).fill=xlFill(XL_GRAY);
+  row.getCell(8).font=xlFont(true,9,XL_BLACK); row.getCell(8).fill=xlFill(XL_GRAY);
+  row.height=14;
+
+  row=ws.addRow(['Datum:',polier.datum||'–','','','','','','Datum:',bauleiter.datum||'–','','','','','','']);
+  ws.mergeCells(`B${row.number}:G${row.number}`);
+  ws.mergeCells(`I${row.number}:O${row.number}`);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);
+  row.getCell(8).font=xlFont(true,9,XL_BLACK);
+  row.height=14;
+
+  row=ws.addRow(['Name (getippt):',polier.typed||'–','','','','','','Name (getippt):',bauleiter.typed||'–','','','','','','']);
+  ws.mergeCells(`B${row.number}:G${row.number}`);
+  ws.mergeCells(`I${row.number}:O${row.number}`);
+  row.getCell(2).font=xlFont(true,11,XL_BLACK,'Arial');
+  row.getCell(9).font=xlFont(true,11,XL_BLACK,'Arial');
+  row.height=20;
+
+  row=ws.addRow(['Handunterschrift:',
+    polier.drawn&&polier.drawn.length>100?'✓ Digital unterschrieben':'–','','','','','',
+    'Handunterschrift:',
+    bauleiter.drawn&&bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–','','','','','',''
+  ]);
+  ws.mergeCells(`B${row.number}:G${row.number}`);
+  ws.mergeCells(`I${row.number}:O${row.number}`);
+  row.getCell(1).font=xlFont(false,9,XL_BLACK);
+  row.getCell(8).font=xlFont(false,9,XL_BLACK);
+  row.height=14;
+
+  ws.addRow([]);
+
+  // ── STATUS & VERLAUF ──
+  row=ws.addRow(['STATUS & VERLAUF','','','','','','','','','','','','','','']);
+  ws.mergeCells(`A${row.number}:O${row.number}`);
+  row.getCell(1).font=xlFont(true,10,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_DGRAY);
+  row.height=16;
+
+  const hist=entry?.editHistory||[];
+  if(hist.length){
+    row=ws.addRow(['Aktion','Von','Rolle','Datum/Zeit','','','','','','','','','','','']);
+    row.eachCell(cell=>{cell.font=xlFont(true,9,XL_BLACK);cell.fill=xlFill(XL_GRAY);});
+    hist.forEach(h=>{
+      row=ws.addRow([h.action||'–',h.by||'–',h.role||'–',h.at||'–']);
+      row.eachCell(cell=>{cell.font=xlFont(false,9,XL_BLACK);cell.border=xlBorder();});
+    });
+  } else {
+    const statusRows=[
+      ['Status:',stL(entry?.st||'missing')],
+      entry?.submittedAt?['Eingereicht:',entry.submittedAt,'von:',name]:null,
+      entry?.cc?['CC-PL:',entry.cc,'bestätigt:',entry.ccApprovedBy||'Noch ausstehend']:null,
+      entry?.mainApprovedBy||entry?.approvedBy?['Bestätigt:',entry.mainApprovedBy||entry.approvedBy]:null,
+      entry?.forwarding?.by?['An Buchhaltung:',entry.forwarding.by,entry.forwarding.at||'']:null,
+      entry?.buchhaltung?.by?['Buchhaltung bestätigt:',entry.buchhaltung.by,entry.buchhaltung.at||'']:null,
+    ].filter(Boolean);
+    statusRows.forEach(r=>{
+      row=ws.addRow(r);
+      row.getCell(1).font=xlFont(true,9,XL_BLACK);
+      row.getCell(1).fill=xlFill(XL_GRAY);
+    });
+  }
+
+  ws.addRow([]);
+  row=ws.addRow(['Export von:',CU,'am:',now()]);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);
 }
 
-function buildExcelT2(name,month,entry){
-  const td=entry?.tableData||[];
-  const rows=[
-    ['SPOMA Parkett und Ausbau GmbH'],
-    ['Monatsabrechnung — Tabelle 2 (Projektleiter, Bauleiter, etc.)'],
-    [],
-    ['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'','Projektleiter:',entry?.pl||USERS[name]?.pl||'','CC-Projektleiter:',entry?.cc||'–','CC bestätigt von:',entry?.ccApprovedBy||'–','CC bestätigt am:',entry?.ccApprovedAt||'–'],
-    ['Haupt-PL bestätigt von:',entry?.mainApprovedBy||entry?.approvedBy||'–','am:',entry?.mainApprovedAt||entry?.approvedAt||'–'],
-    [],
-    ['Tag','Baustelle','Kostenstelle','Urlaub','Krank','Besonderheiten','Auslöse versteuert (18€)','Auslöse steuerfrei €'],
+async function buildSheetT2(wb, name, month, entry){
+  const ws = wb.addWorksheet('Monatsabrechnung', {
+    pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0},
+  });
+
+  const td = entry?.tableData || [];
+  const sigs = entry?.originalSignatures || entry?.signatures || {};
+
+  ws.columns = [
+    {width:5},   // A: Tag
+    {width:25},  // B: Baustelle
+    {width:12},  // C: KST
+    {width:6},   // D: URL
+    {width:6},   // E: Krank
+    {width:20},  // F: Besonderheiten
+    {width:14},  // G: Auslöse versteuert
+    {width:14},  // H: Auslöse steuerfrei
   ];
-  if(td.length){
-    td.forEach(r=>{
-      if(r.locked){
-        rows.push([r.day,'Wochenende','','','','','','']);
-      } else {
-        rows.push([r.day,r.baustelle||'',r.kst||'',r.url?'X':'',r.krank?'X':'',r.bem||'',r.vst?'18 €':'',r.sfr||'']);
-      }
+
+  let row;
+
+  // Title
+  row=ws.addRow(['SPOMA Parkett und Ausbau GmbH — Monatsabrechnung Tabelle 2']);
+  ws.mergeCells('A1:H1');
+  row.getCell(1).font=xlFont(true,13,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_BLACK);
+  row.getCell(1).alignment=xlAlign('center','middle');
+  row.height=22;
+
+  // Info row
+  row=ws.addRow(['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'–','PL:',entry?.pl||USERS[name]?.pl||'–']);
+  row.height=16;
+  [1,3,5,7].forEach(ci=>{row.getCell(ci).font=xlFont(true,9,XL_BLACK);row.getCell(ci).fill=xlFill(XL_GRAY);});
+
+  row=ws.addRow(['CC-PL:',entry?.cc||'–','CC bestätigt:',entry?.ccApprovedBy||'–','','','','']);
+  row.height=14;
+  [1,3].forEach(ci=>{row.getCell(ci).font=xlFont(true,9,XL_BLACK);row.getCell(ci).fill=xlFill(XL_GRAY);});
+
+  ws.addRow([]);
+
+  // Headers
+  row=ws.addRow(['Tag','Baustelle','KST','URL','Krank','Besonderheiten','Auslöse versteuert ✓','Auslöse steuerfrei €']);
+  row.height=20;
+  row.eachCell(cell=>{
+    cell.font=xlFont(true,9,XL_WHITE);
+    cell.fill=xlFill(XL_DGRAY);
+    cell.alignment=xlAlign('center','middle');
+    cell.border={bottom:{style:'medium',color:{argb:XL_GOLD}}};
+  });
+
+  // Data rows
+  let tVst=0, tSfr=0;
+  td.forEach(r=>{
+    const isWE=r.locked&&(r.baustelle==='Wochenende'||!r.baustelle);
+    tVst+=r.vst?18:0;
+    tSfr+=parseFloat(r.sfr)||0;
+
+    row=ws.addRow([
+      r.day,
+      r.baustelle||'',
+      r.kst||'',
+      r.url?'✓':'',
+      r.krank?'✓':'',
+      r.bem||'',
+      r.vst?'✓ 18€':'',
+      r.sfr||''
+    ]);
+    row.height=15;
+
+    const bg=isWE?XL_WKND:XL_WHITE;
+    row.eachCell(cell=>{
+      cell.fill=xlFill(bg);
+      cell.border=xlBorder();
+      cell.font=xlFont(false,9,isWE?'FF888888':XL_BLACK);
+      cell.alignment=xlAlign('left','middle');
     });
-  } else {
-    for(let d=1;d<=31;d++) rows.push([d,'','','','','','','']);
-  }
+    row.getCell(1).font=xlFont(true,9,isWE?'FF888888':XL_BLACK);
+    row.getCell(1).alignment=xlAlign('center','middle');
+    row.getCell(3).font=xlFont(true,9,'FF996600');
+    if(r.vst){
+      row.getCell(7).fill=xlFill(XL_LGOLD);
+      row.getCell(7).font=xlFont(true,9,'FF856404');
+    }
+    [4,5].forEach(ci=>row.getCell(ci).alignment=xlAlign('center','middle'));
+  });
+
   // Summe
-  const sumVst=td.reduce((s,r)=>s+(r.vst?18:0),0);
-  const sumSfr=td.reduce((s,r)=>s+(parseFloat(r.sfr)||0),0);
-  rows.push(['Summe','','','','','',sumVst?sumVst+' €':'',sumSfr?sumSfr.toFixed(2)+' €':'']);
-  rows.push([]);
-  // Zuordnung
-  rows.push(['ZUORDNUNG AUF DEN BAUSTELLEN']);
-  rows.push(['Baustelle','KST Nr.','Anteil %','Auslöse €','Kosten BSt. €']);
-  const bsMap={};let totalDays=0;
-  td.forEach(r=>{if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){if(!bsMap[r.baustelle])bsMap[r.baustelle]={kst:r.kst||'',days:0,aus:0};bsMap[r.baustelle].days++;bsMap[r.baustelle].aus+=r.vst?18:0;totalDays++;}});
-  Object.entries(bsMap).forEach(([bs,data])=>{
-    const ant=totalDays>0?((data.days/totalDays)*100).toFixed(2)+'%':'0%';
-    rows.push([bs,data.kst,ant,data.aus?data.aus+' €':'',data.aus?data.aus+' €':'']);
+  row=ws.addRow(['Summe','','','','','',tVst?tVst+' €':'',tSfr?parseFloat(tSfr.toFixed(2))+' €':'']);
+  row.height=16;
+  row.eachCell(cell=>{
+    cell.font=xlFont(true,9,XL_WHITE);
+    cell.fill=xlFill(XL_DGRAY);
+    cell.border={top:{style:'medium',color:{argb:XL_GOLD}}};
   });
-  rows.push([]);
-  rows.push(['Auslöse versteuert gesamt:',sumVst?sumVst+' €':'0 €']);
-  rows.push(['Gesamt:',((sumVst+sumSfr).toFixed(2))+' €']);
-  rows.push([]);
-  // STATUS & AUDIT HISTORY
-  rows.push(['STATUS & VERLAUF']);
-  rows.push(['Status:',stL(entry?.st||'missing')]);
-  const hist2=entry?.editHistory||[];
-  if(hist2.length){
-    rows.push(['AKTIONSPROTOKOLL']);
-    rows.push(['Aktion','Von','Rolle','Datum/Zeit']);
-    hist2.forEach(h=>rows.push([h.action||'–',h.by||'–',h.role||'–',h.at||'–']));
+
+  ws.addRow([]);
+
+  // Mini cards
+  row=ws.addRow(['Auslöse versteuert:',tVst+' €','','Gesamt:',(tVst+tSfr).toFixed(2)+' €','','','']);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+  row.getCell(2).font=xlFont(true,11,XL_BLACK);
+  row.getCell(4).font=xlFont(true,9,XL_BLACK);row.getCell(4).fill=xlFill(XL_GRAY);
+  row.getCell(5).font=xlFont(true,11,XL_BLACK);
+  row.height=18;
+
+  ws.addRow([]);
+
+  // Zuordnung T2
+  row=ws.addRow(['ZUORDNUNG AUF DEN BAUSTELLEN','','','','','','','']);
+  ws.mergeCells(`A${row.number}:H${row.number}`);
+  row.getCell(1).font=xlFont(true,9,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_DGRAY);
+  row.height=16;
+
+  row=ws.addRow(['Baustelle','KST Nr.','Anteil %','Auslöse €','Kosten BSt. €','','','']);
+  row.eachCell(cell=>{cell.font=xlFont(true,9,XL_WHITE);cell.fill=xlFill(XL_BLACK);});
+  row.height=14;
+
+  const bsMap2={};let totalDays=0;
+  td.forEach(r=>{
+    if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){
+      if(!bsMap2[r.baustelle])bsMap2[r.baustelle]={kst:r.kst||'',days:0,aus:0};
+      bsMap2[r.baustelle].days++;bsMap2[r.baustelle].aus+=r.vst?18:0;totalDays++;
+    }
+  });
+
+  Object.entries(bsMap2).forEach(([bs,d])=>{
+    const ant=totalDays>0?((d.days/totalDays)*100):0;
+    row=ws.addRow([bs,d.kst,parseFloat(ant.toFixed(2))+'%',d.aus?d.aus+' €':'',d.aus?d.aus+' €':'','','','']);
+    row.eachCell(cell=>{cell.border=xlBorder();cell.font=xlFont(false,9,XL_BLACK);});
+    row.getCell(2).font=xlFont(true,9,'FF996600');
+    row.height=14;
+  });
+
+  // Total
+  row=ws.addRow(['Summe:','','100,00%',tVst?tVst+' €':'',tVst?tVst+' €':'','','','']);
+  row.eachCell(cell=>{cell.font=xlFont(true,9,XL_WHITE);cell.fill=xlFill(XL_DGRAY);cell.border={top:{style:'medium',color:{argb:XL_GOLD}}};});
+  row.height=15;
+
+  ws.addRow([]);
+
+  // Unterschriften
+  row=ws.addRow(['UNTERSCHRIFTEN & DATUM','','','','','','','']);
+  ws.mergeCells(`A${row.number}:H${row.number}`);
+  row.getCell(1).font=xlFont(true,10,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_DGRAY);
+  row.height=16;
+
+  const polier=sigs.polier||{};
+  const bauleiter=sigs.bauleiter||{};
+
+  [
+    ['Unterschrift Polier','','','','Unterschrift Bauleiter','','',''],
+    ['Datum:',polier.datum||'–','','','Datum:',bauleiter.datum||'–','',''],
+    ['Name (getippt):',polier.typed||'–','','','Name (getippt):',bauleiter.typed||'–','',''],
+  ].forEach(r=>{
+    row=ws.addRow(r);
+    row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+    row.getCell(5).font=xlFont(true,9,XL_BLACK);row.getCell(5).fill=xlFill(XL_GRAY);
+    row.height=15;
+  });
+
+  ws.addRow([]);
+
+  // Status
+  row=ws.addRow(['STATUS & VERLAUF','','','','','','','']);
+  ws.mergeCells(`A${row.number}:H${row.number}`);
+  row.getCell(1).font=xlFont(true,10,XL_WHITE);
+  row.getCell(1).fill=xlFill(XL_DGRAY);
+  row.height=16;
+
+  const hist=entry?.editHistory||[];
+  if(hist.length){
+    hist.forEach(h=>{
+      row=ws.addRow([h.action||'–',h.by||'–',h.role||'–',h.at||'–','','','','']);
+      row.eachCell(cell=>{cell.font=xlFont(false,9,XL_BLACK);cell.border=xlBorder();});
+    });
   } else {
-    if(entry?.submittedAt)rows.push(['Eingereicht am:',entry.submittedAt,'von:',entry.employeeName||'–']);
-    if(entry?.mainApproval?.by)rows.push(['Bestätigt (Haupt-PL):',entry.mainApproval.by,'am:',entry.mainApproval.at||'–']);
-    if(entry?.ccApproval?.by)rows.push(['Bestätigt (CC-PL):',entry.ccApproval.by,'am:',entry.ccApproval.at||'–']);
-    if(entry?.approvedBy)rows.push(['Bestätigt von:',entry.approvedBy,'am:',entry.approvedAt||'']);
-    if(entry?.forwarding?.by)rows.push(['An Buchhaltung:',entry.forwarding.by,'am:',entry.forwarding.at||'–']);
-    if(entry?.forwardedBy)rows.push(['An Buchhaltung von:',entry.forwardedBy,'am:',entry.forwardedAt||'']);
-    if(entry?.buchhaltung?.by)rows.push(['Buchhaltung bestätigt:',entry.buchhaltung.by,'am:',entry.buchhaltung.at||'–']);
-    if(entry?.confirmedBy)rows.push(['Buchhaltung bestätigt von:',entry.confirmedBy,'am:',entry.confirmedAt||'']);
+    [
+      ['Status:',stL(entry?.st||'missing')],
+      entry?.submittedAt?['Eingereicht:',entry.submittedAt]:null,
+      entry?.cc?['CC-PL:',entry.cc,'bestätigt:',entry.ccApprovedBy||'ausstehend']:null,
+      entry?.mainApprovedBy||entry?.approvedBy?['Bestätigt:',entry.mainApprovedBy||entry.approvedBy]:null,
+      entry?.forwarding?.by?['An Buchhaltung:',entry.forwarding.by]:null,
+      entry?.buchhaltung?.by?['Buchhaltung bestätigt:',entry.buchhaltung.by]:null,
+    ].filter(Boolean).forEach(r=>{
+      row=ws.addRow(r);
+      row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
+    });
   }
-  rows.push([]);
-  const sigs2 = entry?.originalSignatures || entry?.signatures || {};
-  rows.push(['UNTERSCHRIFTEN & DATUM (Original)']);
-  rows.push(['', 'Polier / Vorarbeiter', 'Bauleiter']);
-  rows.push(['Datum:', sigs2.polier?.datum||'–', sigs2.bauleiter?.datum||'–']);
-  rows.push(['Name (getippt):', sigs2.polier?.typed||'–', sigs2.bauleiter?.typed||'–']);
-  rows.push(['Handunterschrift:', sigs2.polier?.drawn&&sigs2.polier.drawn.length>100?'✓ Digital unterschrieben':'–',
-    sigs2.bauleiter?.drawn&&sigs2.bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–']);
-  rows.push([]);
-  rows.push(['Export von:',CU,'am:',now()]);
-  return rows;
+
+  ws.addRow([]);
+  row=ws.addRow(['Export von:',CU,'am:',now()]);
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);
 }
 
-function buildExcelData(name,month,tbl){
-  const entry=USERS[name]?.status?.[month]||{};
-  const t=tbl||entry.tbl||1;
-  return t===2?buildExcelT2(name,month,entry):buildExcelT1(name,month,entry);
-}
+// Keep old functions for compatibility
+function buildExcelT1(name,month,entry){return [];}
+function buildExcelT2(name,month,entry){return [];}
+function buildExcelData(name,month,tbl){return [];}
+function doExcelDownload(name,month,tbl){exportPersonExcel(name,month);}
 
-function doExcelDownload(name,month,tbl){
-  const entry=USERS[name]?.status?.[month];
-  if(entry){USERS[name].status[month]={...entry,downloadedBy:CU,downloadedAt:now()};}
-  if(!USERS[CU].downloads)USERS[CU].downloads=[];
-  USERS[CU].downloads.push({name,month,downloadedAt:now()});
-  const t=tbl||entry?.tbl||1;
-  const rows=t===2?buildExcelT2(name,month,entry||{}):buildExcelT1(name,month,entry||{});
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:10},{wch:12},{wch:16},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12},{wch:8},{wch:8},{wch:10},{wch:8}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
-  const filename=`SPOMA_${name.replace(/ /g,'_')}_${month.replace(/ /g,'_')}_T${t}.xlsx`;
-  XLSX.writeFile(wb,filename);
-  toast('⬇ Excel heruntergeladen: '+filename);
-}
 
-function exportPersonExcel(name,month){doExcelDownload(name,month,USERS[name]?.status?.[month]?.tbl||1);}
-function exportDetailExcel(){if(curDetail&&curMonth)doExcelDownload(curDetail,curMonth);}
-function exportExcelT1(){
-  // Read live data from current open T1 form
-  const liveEntry={tbl:1,tableData:gatherT1Data(),tarif:document.getElementById('t1-tarif')?.value||''};
-  const rows=buildExcelT1(CU,curMonth,liveEntry);
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:10},{wch:12},{wch:16},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12},{wch:8},{wch:8},{wch:10},{wch:8}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
-  XLSX.writeFile(wb,`SPOMA_${CU.replace(/ /g,'_')}_${curMonth.replace(/ /g,'_')}_T1.xlsx`);
-  toast('⬇ Excel T1 heruntergeladen!');
-}
-function exportExcelT2(){
-  const liveEntry={tbl:2,tableData:gatherT2Data()};
-  const rows=buildExcelT2(CU,curMonth,liveEntry);
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:6},{wch:22},{wch:12},{wch:8},{wch:8},{wch:18},{wch:16},{wch:16}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Monatsabrechnung');
-  XLSX.writeFile(wb,`SPOMA_${CU.replace(/ /g,'_')}_${curMonth.replace(/ /g,'_')}_T2.xlsx`);
-  toast('⬇ Excel T2 heruntergeladen!');
-}
-
-function exportPLExcel(plName){
-  const pl=USERS[plName];const members=Object.keys(pl.members||{});
-  const wb=XLSX.utils.book_new();
-  members.forEach(name=>{
-    const mu=USERS[name];if(!mu)return;
-    Object.keys(mu.status||{}).forEach(month=>{
-      const rows=buildExcelData(name,month,mu.status[month].tbl||1);
-      const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:8},{wch:5},{wch:6},{wch:6},{wch:20},{wch:10},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:7},{wch:7},{wch:8},{wch:8}];
-      const sheetName=(name.slice(0,10)+'_'+month.slice(0,3)).replace(/ /g,'_').slice(0,31);
-      XLSX.utils.book_append_sheet(wb,ws,sheetName);
-      if(!USERS[name].status[month].downloadedBy){USERS[name].status[month]={...USERS[name].status[month],downloadedBy:CU,downloadedAt:now()};}
-    });
-  });
-  if(wb.SheetNames.length===0){toast('Keine Abrechnungen vorhanden.','err');return;}
-  XLSX.writeFile(wb,`SPOMA_${plName.replace(/ /g,'_')}_Abrechnungen.xlsx`);
-  toast('⬇ Alle Excel für '+plName+' heruntergeladen!');
-}
-
-function exportAllExcel(){
-  const wb=XLSX.utils.book_new();let count=0;
-  Object.keys(USERS).sort().forEach(name=>{
-    Object.keys(USERS[name].status||{}).forEach(month=>{
-      count++;
-      const rows=buildExcelData(name,month,USERS[name].status[month].tbl||1);
-      const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:8},{wch:5},{wch:6},{wch:6},{wch:20},{wch:10},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:7},{wch:7},{wch:8},{wch:8}];
-      const sn=(name.slice(0,8)+'_'+month.slice(0,3)).replace(/ /g,'_').slice(0,31);
-      XLSX.utils.book_append_sheet(wb,ws,sn);
-      if(!USERS[name].status[month].downloadedBy){USERS[name].status[month]={...USERS[name].status[month],downloadedBy:CU,downloadedAt:now()};}
-    });
-  });
-  if(count===0){toast('Noch keine Abrechnungen vorhanden.','err');return;}
-  XLSX.writeFile(wb,`SPOMA_Alle_Abrechnungen_${new Date().toLocaleDateString('de-DE').replace(/\./g,'-')}.xlsx`);
-  toast('⬇ Alle '+count+' Abrechnungen als Excel heruntergeladen!');
-  if(!USERS[CU].downloads)USERS[CU].downloads=[];
-  USERS[CU].downloads.push({name:'ALLE',month:'Komplett-Export',downloadedAt:now()});
-  buildAdmArch();
-}
-</script>
-<!-- Firebase SDK — loaded last so DOM is ready -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script>
 // Toggle password visibility
 function togglePw(inputId, btn){
   const inp=document.getElementById(inputId);
