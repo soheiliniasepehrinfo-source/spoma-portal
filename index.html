@@ -1468,15 +1468,20 @@ function openT2(){
             <option value="Urlaub">Urlaub</option>
             <option value="Wochenende">Wochenende</option>
           </select>
+          <button type="button" class="t2-split-add" onclick="t2AddSplit(${d})" title="2. Baustelle für diesen Tag hinzufügen" style="flex-shrink:0;padding:2px 7px!important;font-size:12px!important;font-weight:700;">+</button>
         </div>
       </td>
       <td><input type="text" class="kst2" style="color:var(--gold)!important;font-weight:700;width:100%;"></td>
       <td class="check"><input type="checkbox" class="url2" onchange="t2Recalc()"></td>
       <td class="check"><input type="checkbox" class="krank2" onchange="t2Recalc()"></td>
       <td><input type="text" class="bem2" style="width:100%;"></td>
-      <td style="background:#FFF8E7!important;text-align:center;"><input type="checkbox" class="vst2" onchange="t2Recalc()"></td>
-      <td><input type="number" min="0" class="sfr2" style="width:100%;" onchange="t2Recalc()"></td>`;
+      <td style="background:#FFF8E7!important;text-align:center;"><input type="checkbox" class="vst2" onchange="t2AusChanged(this)"></td>
+      <td><input type="number" min="0" class="sfr2" style="width:100%;" onchange="t2AusChanged(this)"></td>`;
     tbody.appendChild(tr);
+  }
+  // Restore any existing 2nd-Baustelle (split) rows from saved data — NEW, additive
+  if(entry.tableData&&entry.tableData.length){
+    entry.tableData.forEach(r=>{ if(r.split) t2AddSplit(parseInt(r.day),r.split); });
   }
   buildT2ZuordTable();t2Recalc();buildSigBoxes('t2-sigs','t2');
 }
@@ -1488,22 +1493,89 @@ function t2OnSpecial(sel){
     bsInput.value='Wochenende';kst.value='';
     tr.querySelectorAll('input[type=number],input[type=checkbox]').forEach(i=>{if(i.type==='checkbox')i.checked=false;else i.value='';});
     tr.className='locked';
+    // NEW: remove any 2nd-Baustelle split row for this day, since Wochenende has no work to split
+    const split=tr.nextElementSibling;
+    if(split&&split.classList.contains('t2-split')&&split.dataset.day===tr.dataset.day)split.remove();
   } else if(val==='Feiertag'){bsInput.value='Feiertag';kst.value='070800';tr.className='';tr.querySelector('.url2').checked=false;}
   else if(val==='Urlaub'){bsInput.value='Urlaub';kst.value='070800';tr.className='';tr.querySelector('.url2').checked=true;}
   sel.value='';t2Recalc();
 }
 let t2Timer=null;
 function t2RecalcSoon(){clearTimeout(t2Timer);t2Timer=setTimeout(t2Recalc,300);}
-function t2TogDay(d,show){const tr=document.querySelector(`#t2-tbody tr[data-day="${d}"]`);if(!tr)return;if(show)tr.classList.remove('hidden');else tr.classList.add('hidden');t2Recalc();}
+function t2TogDay(d,show){
+  const tr=document.querySelector(`#t2-tbody tr[data-day="${d}"]:not(.t2-split)`);if(!tr)return;
+  if(show)tr.classList.remove('hidden');else tr.classList.add('hidden');
+  // NEW: keep a day's split row in sync with its main row's visibility
+  const split=tr.nextElementSibling;
+  if(split&&split.classList.contains('t2-split')&&split.dataset.day===tr.dataset.day){
+    if(show)split.classList.remove('hidden');else split.classList.add('hidden');
+  }
+  t2Recalc();
+}
+
+// ── NEW, ISOLATED: 2nd Baustelle per day (Tabelle 2 only) ──
+function t2AddSplit(day,data){
+  const mainTr=document.querySelector(`#t2-tbody tr[data-day="${day}"]:not(.t2-split)`);
+  if(!mainTr||mainTr.classList.contains('locked'))return;
+  if(mainTr.nextElementSibling&&mainTr.nextElementSibling.classList.contains('t2-split')&&mainTr.nextElementSibling.dataset.day===String(day))return;
+  const tr=document.createElement('tr');
+  tr.className='t2-split';tr.dataset.day=String(day);
+  const d=data||{};
+  const esc=v=>(v||'').toString().replace(/"/g,'&quot;');
+  tr.innerHTML=`<td class="daynum" style="text-align:center;">
+      <span style="color:var(--muted);font-size:11px;">↳</span>
+      <button type="button" onclick="t2RemoveSplit(this)" title="2. Baustelle entfernen" style="background:none!important;border:none!important;color:var(--err)!important;cursor:pointer;font-size:12px;padding:0 2px!important;">✕</button>
+    </td>
+    <td><input type="text" class="bs2-split" placeholder="2. Baustelle..." style="width:100%;" value="${esc(d.baustelle)}" oninput="t2RecalcSoon()"></td>
+    <td><input type="text" class="kst2-split" style="color:var(--gold)!important;font-weight:700;width:100%;" value="${esc(d.kst)}"></td>
+    <td class="check" style="color:var(--muted);">–</td>
+    <td class="check" style="color:var(--muted);">–</td>
+    <td><input type="text" class="bem2-split" style="width:100%;" value="${esc(d.bem)}"></td>
+    <td style="background:#FFF8E7!important;text-align:center;"><input type="checkbox" class="vst2-split" onchange="t2AusChanged(this)" ${d.vst?'checked':''}></td>
+    <td><input type="number" min="0" class="sfr2-split" style="width:100%;" onchange="t2AusChanged(this)" value="${d.sfr||''}"></td>`;
+  mainTr.after(tr);
+  t2Recalc();
+}
+function t2RemoveSplit(btn){
+  btn.closest('tr').remove();
+  t2Recalc();
+}
+function t2AusChanged(el){
+  // Enforces: one day = one Auslöse. Setting it on one line (main or split) clears it on the other.
+  const tr=el.closest('tr');
+  const isSplit=tr.classList.contains('t2-split');
+  const hasAus=isSplit
+    ? (tr.querySelector('.vst2-split')?.checked||parseFloat(tr.querySelector('.sfr2-split')?.value)>0)
+    : (tr.querySelector('.vst2')?.checked||parseFloat(tr.querySelector('.sfr2')?.value)>0);
+  if(hasAus){
+    const otherTr=isSplit?tr.previousElementSibling:tr.nextElementSibling;
+    if(otherTr&&otherTr.dataset.day===tr.dataset.day&&(isSplit?!otherTr.classList.contains('t2-split'):otherTr.classList.contains('t2-split'))){
+      const ov=otherTr.querySelector(isSplit?'.vst2':'.vst2-split');if(ov)ov.checked=false;
+      const os=otherTr.querySelector(isSplit?'.sfr2':'.sfr2-split');if(os)os.value='';
+    }
+  }
+  t2Recalc();
+}
 
 function t2Recalc(){
   let tVst=0,tSfr=0;const bsMap={};
-  document.querySelectorAll('#t2-tbody tr').forEach(tr=>{
+  document.querySelectorAll('#t2-tbody tr:not(.t2-split)').forEach(tr=>{
     if(tr.classList.contains('locked')||tr.classList.contains('hidden'))return;
+    const splitTr=tr.nextElementSibling;
+    const hasSplit=splitTr&&splitTr.classList.contains('t2-split')&&splitTr.dataset.day===tr.dataset.day&&!splitTr.classList.contains('hidden');
+    const fraction=hasSplit?0.5:1; // NEW: a split day counts as half a day to each Baustelle
+
     const bs=tr.querySelector('.bs2')?.value.trim()||'';const kst=tr.querySelector('.kst2')?.value.trim()||'';
     const vst=tr.querySelector('.vst2')?.checked?18:0;const sfr=parseFloat(tr.querySelector('.sfr2')?.value)||0;
     tVst+=vst;tSfr+=sfr;
-    if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,days:0,aus:0};bsMap[bs].days++;bsMap[bs].aus+=vst;if(kst)bsMap[bs].kst=kst;}
+    if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,days:0,aus:0};bsMap[bs].days+=fraction;bsMap[bs].aus+=vst;if(kst)bsMap[bs].kst=kst;}
+
+    if(hasSplit){
+      const bs2=splitTr.querySelector('.bs2-split')?.value.trim()||'';const kst2=splitTr.querySelector('.kst2-split')?.value.trim()||'';
+      const vst2=splitTr.querySelector('.vst2-split')?.checked?18:0;const sfr2=parseFloat(splitTr.querySelector('.sfr2-split')?.value)||0;
+      tVst+=vst2;tSfr+=sfr2;
+      if(bs2){if(!bsMap[bs2])bsMap[bs2]={kst:kst2,days:0,aus:0};bsMap[bs2].days+=0.5;bsMap[bs2].aus+=vst2;if(kst2)bsMap[bs2].kst=kst2;}
+    }
   });
   const fv=document.getElementById('t2f-vst'),fs=document.getElementById('t2f-sfr');
   if(fv)fv.textContent=tVst?fmt(tVst)+' €':'';if(fs)fs.textContent=tSfr?fmt(tSfr)+' €':'';
@@ -1570,9 +1642,9 @@ async function submitT2(){
 
 function gatherT2Data(){
   const rows=[];
-  document.querySelectorAll('#t2-tbody tr').forEach(tr=>{
+  document.querySelectorAll('#t2-tbody tr:not(.t2-split)').forEach(tr=>{
     if(tr.classList.contains('hidden'))return;
-    rows.push({
+    const row={
       day:tr.dataset.day,
       locked:tr.classList.contains('locked'),
       baustelle:tr.querySelector('.bs2')?.value||'',
@@ -1582,7 +1654,19 @@ function gatherT2Data(){
       bem:tr.querySelector('.bem2')?.value||'',
       vst:tr.querySelector('.vst2')?.checked,
       sfr:tr.querySelector('.sfr2')?.value||''
-    });
+    };
+    // NEW: capture the 2nd Baustelle (split) for this day, if present
+    const splitTr=tr.nextElementSibling;
+    if(splitTr&&splitTr.classList.contains('t2-split')&&splitTr.dataset.day===tr.dataset.day&&!splitTr.classList.contains('hidden')){
+      row.split={
+        baustelle:splitTr.querySelector('.bs2-split')?.value||'',
+        kst:splitTr.querySelector('.kst2-split')?.value||'',
+        bem:splitTr.querySelector('.bem2-split')?.value||'',
+        vst:splitTr.querySelector('.vst2-split')?.checked,
+        sfr:splitTr.querySelector('.sfr2-split')?.value||''
+      };
+    }
+    rows.push(row);
   });
   return rows;
 }
@@ -2839,15 +2923,28 @@ function buildFullViewHTML(sub){
     // ── TABLE 2 ──
     let tVst=0,tSfr=0;
     const bsMap2={};let totalDays=0;
+    const hasSplitRow=r=>!!(r.split&&(r.split.baustelle||r.split.kst||r.split.bem||r.split.vst||r.split.sfr)); // NEW
     rows.forEach(r=>{
+      const fraction=hasSplitRow(r)?0.5:1; // NEW: split day = half a day to each Baustelle
       if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){
         if(!bsMap2[r.baustelle])bsMap2[r.baustelle]={kst:r.kst||'',days:0,aus:0};
-        bsMap2[r.baustelle].days++;
+        bsMap2[r.baustelle].days+=fraction;
         bsMap2[r.baustelle].aus+=r.vst?18:0;
-        totalDays++;
+        totalDays+=fraction;
       }
       tVst+=r.vst?18:0;
       tSfr+=parseFloat(r.sfr)||0;
+      if(hasSplitRow(r)){ // NEW: 2nd Baustelle for this day
+        const s=r.split;
+        if(s.baustelle){
+          if(!bsMap2[s.baustelle])bsMap2[s.baustelle]={kst:s.kst||'',days:0,aus:0};
+          bsMap2[s.baustelle].days+=0.5;
+          bsMap2[s.baustelle].aus+=s.vst?18:0;
+          totalDays+=0.5;
+        }
+        tVst+=s.vst?18:0;
+        tSfr+=parseFloat(s.sfr)||0;
+      }
     });
 
     let rowsHtml='';
@@ -2861,6 +2958,18 @@ function buildFullViewHTML(sub){
         <td>${r.bem||''}</td>
         <td style="background:#FFF8E7!important;text-align:center;font-weight:600;">${r.vst?'✓ 18€':''}</td>
         <td>${r.sfr||''}</td></tr>`;
+      if(hasSplitRow(r)){ // NEW: render the 2nd Baustelle line under this day
+        const s=r.split;
+        rowsHtml+=`<tr style="background:#FAFAFA;">
+          <td class="daynum" style="color:var(--muted);font-size:10px;">↳</td>
+          <td>${s.baustelle||''}</td>
+          <td style="color:var(--gold);font-weight:700;">${s.kst||''}</td>
+          <td class="check">–</td>
+          <td class="check">–</td>
+          <td>${s.bem||''}</td>
+          <td style="background:#FFF8E7!important;text-align:center;font-weight:600;">${s.vst?'✓ 18€':''}</td>
+          <td>${s.sfr||''}</td></tr>`;
+      }
     });
 
     let zuordHtml='';
@@ -3633,6 +3742,7 @@ async function buildSheetT2(wb, name, month, entry){
 
   // Data rows
   let tVst=0, tSfr=0;
+  const hasSplitRowX=r=>!!(r.split&&(r.split.baustelle||r.split.kst||r.split.bem||r.split.vst||r.split.sfr)); // NEW
   td.forEach(r=>{
     const isWE=r.locked&&(r.baustelle==='Wochenende'||!r.baustelle);
     tVst+=r.vst?18:0;
@@ -3665,6 +3775,24 @@ async function buildSheetT2(wb, name, month, entry){
       row.getCell(7).font=xlFont(true,9,'FF856404');
     }
     [4,5].forEach(ci=>row.getCell(ci).alignment=xlAlign('center','middle'));
+
+    if(hasSplitRowX(r)){ // NEW: 2nd Baustelle line for this day
+      const s=r.split;
+      tVst+=s.vst?18:0;
+      tSfr+=parseFloat(s.sfr)||0;
+      row=ws.addRow(['↳',s.baustelle||'',s.kst||'','–','–',s.bem||'',s.vst?'✓ 18€':'',s.sfr||'']);
+      row.height=15;
+      row.eachCell(cell=>{
+        cell.fill=xlFill('FFFAFAFA');
+        cell.border=xlBorder();
+        cell.font=xlFont(false,9,'FF888888');
+        cell.alignment=xlAlign('left','middle');
+      });
+      row.getCell(1).alignment=xlAlign('center','middle');
+      row.getCell(3).font=xlFont(true,9,'FF996600');
+      if(s.vst){row.getCell(7).fill=xlFill(XL_LGOLD);row.getCell(7).font=xlFont(true,9,'FF856404');}
+      [4,5].forEach(ci=>row.getCell(ci).alignment=xlAlign('center','middle'));
+    }
   });
 
   // Summe
@@ -3701,9 +3829,17 @@ async function buildSheetT2(wb, name, month, entry){
 
   const bsMap2={};let totalDays=0;
   td.forEach(r=>{
+    const fraction=hasSplitRowX(r)?0.5:1; // NEW: split day = half a day to each Baustelle
     if(!r.locked&&r.baustelle&&r.baustelle!=='Wochenende'){
       if(!bsMap2[r.baustelle])bsMap2[r.baustelle]={kst:r.kst||'',days:0,aus:0};
-      bsMap2[r.baustelle].days++;bsMap2[r.baustelle].aus+=r.vst?18:0;totalDays++;
+      bsMap2[r.baustelle].days+=fraction;bsMap2[r.baustelle].aus+=r.vst?18:0;totalDays+=fraction;
+    }
+    if(hasSplitRowX(r)){ // NEW: 2nd Baustelle for this day
+      const s=r.split;
+      if(s.baustelle){
+        if(!bsMap2[s.baustelle])bsMap2[s.baustelle]={kst:s.kst||'',days:0,aus:0};
+        bsMap2[s.baustelle].days+=0.5;bsMap2[s.baustelle].aus+=s.vst?18:0;totalDays+=0.5;
+      }
     }
   });
 
