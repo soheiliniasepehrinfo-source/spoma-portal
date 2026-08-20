@@ -1924,13 +1924,13 @@ async function rejectT3(){
 async function exportExcelT3(){
   const sub=USERS[CU]?.status?.[curMonth];
   const liveEntry={
+    ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (same bug as T1/T2, now fixed)
     tbl:3,
     tableData:gatherT3Data(),
     signatures:gatherT3Signature('t3'),
     originalSignatures:sub?.originalSignatures||sub?.signatures||{},
     submittedAt:sub?.submittedAt||'',
     st:sub?.st||'draft',
-    ...sub
   };
   await buildAndDownloadExcel(CU,curMonth,liveEntry,3);
 }
@@ -3300,6 +3300,7 @@ function xlAlign(h,v){
 async function exportExcelT1(){
   const sub = USERS[CU]?.status?.[curMonth];
   const liveEntry = {
+    ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (was the bug)
     tbl:1,
     tableData: gatherT1Data(),
     signatures: gatherSignatures('t1'),
@@ -3308,7 +3309,6 @@ async function exportExcelT1(){
     cc: document.getElementById('t1-cc')?.value || selCC || '',
     submittedAt: sub?.submittedAt || '',
     st: sub?.st || 'draft',
-    ...sub
   };
   await buildAndDownloadExcel(CU, curMonth, liveEntry, 1);
 }
@@ -3316,6 +3316,7 @@ async function exportExcelT1(){
 async function exportExcelT2(){
   const sub = USERS[CU]?.status?.[curMonth];
   const liveEntry = {
+    ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (was the bug)
     tbl:2,
     tableData: gatherT2Data(),
     signatures: gatherSignatures('t2'),
@@ -3324,7 +3325,6 @@ async function exportExcelT2(){
     cc: document.getElementById('t2-cc')?.value || selCC || '',
     submittedAt: sub?.submittedAt || '',
     st: sub?.st || 'draft',
-    ...sub
   };
   await buildAndDownloadExcel(CU, curMonth, liveEntry, 2);
 }
