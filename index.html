@@ -1140,7 +1140,11 @@ function t1OnBs(sel){
   } else {
     tr.className='';
     const sp=SP_T1.find(s=>s.n===sel.value);
-    if(sp){kst.value=sp.k;tr.querySelector('.url').checked=sel.value==='Urlaub';tr.querySelector('.krank').checked=sel.value==='Krankgeschrieben';}
+    if(sp){
+      kst.value=sp.k;tr.querySelector('.url').checked=sel.value==='Urlaub';tr.querySelector('.krank').checked=sel.value==='Krankgeschrieben';
+      // NEW: Feiertag/Urlaub/Krankgeschrieben auto-fill Ges h to 8 (still manually editable afterward)
+      const ges=tr.querySelector('.ges');if(ges)ges.value=8;
+    }
     else{const f=BS_LIST.find(b=>b.n===sel.value);kst.value=f?f.k:'';tr.querySelector('.url').checked=false;tr.querySelector('.krank').checked=false;}
   }t1Recalc();
 }
@@ -1255,7 +1259,7 @@ function t1Recalc(){
     const bs=tr.querySelector('.bssel')?.value||'',kst=tr.querySelector('.kst')?.value||'';
     if(document.getElementById('t1f50-'+d))document.getElementById('t1f50-'+d).textContent=fahr>0?fmt(f50):'';
     tF+=fahr;tA+=anwes;tG+=ges;tF50+=f50;tU+=u;tK+=k;tAus+=aus;tKm+=km;
-    if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,an:0,fahr:0,aus:0};bsMap[bs].an+=anwes;bsMap[bs].fahr+=fahr;bsMap[bs].aus+=aus;if(kst)bsMap[bs].kst=kst;}
+    if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,an:0,fahr:0,aus:0};bsMap[bs].an+=ges;bsMap[bs].fahr+=f50;bsMap[bs].aus+=aus;if(kst)bsMap[bs].kst=kst;} // NEW: Zuordnung now sources from Ges h and Fahrzeit 50% (not Anwesenheit/full Fahrzeit)
   });
   const ids=['t1f-fz','t1f-anw','t1f-ges','t1f-fz50','t1f-url','t1f-kr','t1f-aus','t1f-km'];
   const vals=[tF?fmt(tF):'',tA?fmt(tA):'',tG?fmt(tG):'',tF50?fmt(tF50):'',tU||'',tK||'',tAus?tAus+'€':'',tKm||''];
@@ -3055,8 +3059,8 @@ function buildFullViewHTML(sub){
     tF+=fahr;tA+=anwes;tG+=gesOf(r);tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tKm+=parseFloat(r.km)||0;
     if(r.baustelle&&r.baustelle!=='Wochenende'){
       if(!bsMap1[r.baustelle])bsMap1[r.baustelle]={kst:r.kst||'',an:0,fahr:0,aus:0};
-      bsMap1[r.baustelle].an+=anwes;
-      bsMap1[r.baustelle].fahr+=fahr;
+      bsMap1[r.baustelle].an+=gesOf(r); // NEW: Zuordnung sources from Ges h, not Anwesenheit
+      bsMap1[r.baustelle].fahr+=fahr*0.5; // NEW: Zuordnung sources from Fahrzeit 50%, not full Fahrzeit
       bsMap1[r.baustelle].aus+=r.aus?18:0;
     }
   });
@@ -3554,9 +3558,11 @@ async function buildSheetT1(wb, name, month, entry){
   td.forEach(r=>{
     if(r.locked||!r.baustelle||r.baustelle==='Wochenende')return;
     const bs=r.baustelle;
+    // NEW: Zuordnung sources from Ges h and Fahrzeit 50% (not Anwesenheit/full Fahrzeit)
+    const ges = (r.ges!==undefined&&r.ges!=='') ? (parseFloat(r.ges)||0) : (parseFloat(r.anwes)||0);
     if(!bsMap[bs])bsMap[bs]={kst:r.kst||'',an:0,fahr:0,aus:0};
-    bsMap[bs].an+=parseFloat(r.anwes)||0;
-    bsMap[bs].fahr+=parseFloat(r.fahr)||0;
+    bsMap[bs].an+=ges;
+    bsMap[bs].fahr+=(parseFloat(r.fahr)||0)*0.5;
     bsMap[bs].aus+=r.aus?18:0;
   });
 
@@ -3581,30 +3587,30 @@ async function buildSheetT1(wb, name, month, entry){
     row.getCell(ci).border = xlBorder();
   });
 
-  // LEFT: real per-Baustelle Zuordnung data — UNCHANGED, still dynamic/based on actual entries that month
-  const bsEntries = Object.entries(bsMap);
-  // RIGHT: Baustelle-Bezeichnung legend — FIX: only Baustelle 1-10 (matches the portal's own legend table exactly,
-  // no Feiertag/Krankgeschrieben/Urlaub), and now actually fills in the typed Bezeichnung text.
+  // LEFT: FIX — fixed, always-complete list matching the portal exactly
+  // (Feiertag / Krankgeschrieben / Urlaub / Baustelle 1-10 — no Wochenende), instead of only listing
+  // categories that happened to have data. Zero-value rows now show 0,00 instead of being skipped.
+  const bsFixedList = ALL_BS.filter(b=>b.n!=='Wochenende');
+  // RIGHT: Baustelle-Bezeichnung legend — unchanged from the previous fix (Baustelle 1-10 only, real typed names)
   const bezNames = ['Baustelle 1','Baustelle 2','Baustelle 3','Baustelle 4','Baustelle 5',
     'Baustelle 6','Baustelle 7','Baustelle 8','Baustelle 9','Baustelle 10'];
 
   let totAn=0,totF=0,totAus=0;
-  // NEW: right-side legend row count is now independent of the left table's row count,
-  // so shortening the legend list can never cut off real left-side Zuordnung entries.
-  const maxRows = Math.max(bsEntries.length, bezNames.length);
+  // Right-side legend row count stays independent of the left table's row count (unchanged principle)
+  const maxRows = Math.max(bsFixedList.length, bezNames.length);
 
   for(let i=0;i<maxRows;i++){
-    const entry2 = bsEntries[i];
-    const bezName = bezNames[i]||''; // NEW
-    const bezText = bezName ? (BS_LIST.find(b=>b.n===bezName)?.b||'') : ''; // NEW: the actual typed name, e.g. "IGS-Magdeburg"
-    if(entry2){
-      const [bs,d]=entry2;
+    const fixedEntry = bsFixedList[i]; // NEW: fixed-list lookup instead of dynamic bsMap entries
+    const d = fixedEntry ? (bsMap[fixedEntry.n]||{kst:fixedEntry.k||'',an:0,fahr:0,aus:0}) : null;
+    const bezName = bezNames[i]||'';
+    const bezText = bezName ? (BS_LIST.find(b=>b.n===bezName)?.b||'') : '';
+    if(fixedEntry){
       totAn+=d.an;totF+=d.fahr;totAus+=d.aus;
       row = ws.addRow([
-        bs, d.kst||'', '',
-        d.an?parseFloat(d.an.toFixed(2)):'',
-        d.fahr?parseFloat(d.fahr.toFixed(2)):'',
-        parseFloat((d.an+d.fahr).toFixed(2)),
+        fixedEntry.n, d.kst||fixedEntry.k||'', '',
+        parseFloat((d.an||0).toFixed(2)),
+        parseFloat((d.fahr||0).toFixed(2)),
+        parseFloat(((d.an||0)+(d.fahr||0)).toFixed(2)),
         d.aus?d.aus+'€':'0,00 €',
         '', bezName, bezText, '', '', '', '', ''
       ]);
