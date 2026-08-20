@@ -1183,7 +1183,7 @@ function openT1(){
       <td><input type="text" placeholder="07:00–16:00" ${dis} style="width:100%;"></td>
       <td class="num"><input type="number" min="0" max="6" step="0.5" class="fahr" onchange="t1Recalc()" ${dis}></td>
       <td class="num"><input type="number" min="0" max="14" step="0.5" class="anwes" onchange="t1Recalc()" ${dis}></td>
-      <td class="auto" id="t1g-${d}"></td><td class="auto-o" id="t1f50-${d}"></td>
+      <td class="num"><input type="number" min="0" max="20" step="0.5" class="ges" onchange="t1Recalc()" ${dis}></td><td class="auto-o" id="t1f50-${d}"></td>
       <td class="check"><input type="checkbox" class="url" onchange="t1Recalc()" ${dis}></td>
       <td class="check"><input type="checkbox" class="krank" onchange="t1Recalc()" ${dis}></td>
       <td class="check"><input type="checkbox" class="aus" onchange="t1Recalc()" ${dis}></td>
@@ -1210,6 +1210,13 @@ function fillT1WithData(rows){
     const zeit=tr.querySelectorAll('input[type=text]')[1];if(zeit&&r.zeit)zeit.value=r.zeit;
     const fahr=tr.querySelector('.fahr');if(fahr&&r.fahr)fahr.value=r.fahr;
     const anwes=tr.querySelector('.anwes');if(anwes&&r.anwes)anwes.value=r.anwes;
+    const ges=tr.querySelector('.ges');
+    if(ges){
+      // NEW: Ges h is now manual. For older MAs saved before this change (no r.ges stored),
+      // fall back to the value it used to auto-display (= Anwesenheit), so old data still shows correctly.
+      if(r.ges!==undefined&&r.ges!=='') ges.value=r.ges;
+      else if(r.anwes) ges.value=r.anwes;
+    }
     const url=tr.querySelector('.url');if(url)url.checked=!!r.url;
     const krank=tr.querySelector('.krank');if(krank)krank.checked=!!r.krank;
     const aus=tr.querySelector('.aus');if(aus)aus.checked=!!r.aus;
@@ -1237,21 +1244,21 @@ function fillT2WithData(rows){
 }
 
 function t1Recalc(){
-  let tF=0,tA=0,tF50=0,tU=0,tK=0,tAus=0,tKm=0;const bsMap={};
+  let tF=0,tA=0,tG=0,tF50=0,tU=0,tK=0,tAus=0,tKm=0;const bsMap={};
   document.querySelectorAll('#t1-tbody tr').forEach(tr=>{
     if(tr.classList.contains('locked')||tr.classList.contains('hidden'))return;
     const d=tr.dataset.day;
     const fahr=parseFloat(tr.querySelector('.fahr')?.value)||0,anwes=parseFloat(tr.querySelector('.anwes')?.value)||0;
+    const ges=parseFloat(tr.querySelector('.ges')?.value)||0; // NEW: Ges h is now manual, not auto-filled
     const f50=fahr*0.5,u=tr.querySelector('.url')?.checked?1:0,k=tr.querySelector('.krank')?.checked?1:0;
     const aus=tr.querySelector('.aus')?.checked?18:0,km=parseFloat(tr.querySelector('.km')?.value)||0;
     const bs=tr.querySelector('.bssel')?.value||'',kst=tr.querySelector('.kst')?.value||'';
-    if(document.getElementById('t1g-'+d))document.getElementById('t1g-'+d).textContent=(anwes||fahr)?fmt(anwes):'';
     if(document.getElementById('t1f50-'+d))document.getElementById('t1f50-'+d).textContent=fahr>0?fmt(f50):'';
-    tF+=fahr;tA+=anwes;tF50+=f50;tU+=u;tK+=k;tAus+=aus;tKm+=km;
+    tF+=fahr;tA+=anwes;tG+=ges;tF50+=f50;tU+=u;tK+=k;tAus+=aus;tKm+=km;
     if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,an:0,fahr:0,aus:0};bsMap[bs].an+=anwes;bsMap[bs].fahr+=fahr;bsMap[bs].aus+=aus;if(kst)bsMap[bs].kst=kst;}
   });
   const ids=['t1f-fz','t1f-anw','t1f-ges','t1f-fz50','t1f-url','t1f-kr','t1f-aus','t1f-km'];
-  const vals=[tF?fmt(tF):'',tA?fmt(tA):'',tA?fmt(tA):'',tF50?fmt(tF50):'',tU||'',tK||'',tAus?tAus+'€':'',tKm||''];
+  const vals=[tF?fmt(tF):'',tA?fmt(tA):'',tG?fmt(tG):'',tF50?fmt(tF50):'',tU||'',tK||'',tAus?tAus+'€':'',tKm||''];
   ids.forEach((id,i)=>{const el=document.getElementById(id);if(el)el.textContent=vals[i];});
   updateT1SumTable(bsMap);
 }
@@ -1429,6 +1436,7 @@ function gatherT1Data(){
       zeit:tr.querySelectorAll('input[type=text]')[1]?.value||'',
       fahr:tr.querySelector('.fahr')?.value||'',
       anwes:tr.querySelector('.anwes')?.value||'',
+      ges:tr.querySelector('.ges')?.value||'',
       url:tr.querySelector('.url')?.checked,
       krank:tr.querySelector('.krank')?.checked,
       aus:tr.querySelector('.aus')?.checked,
@@ -3028,12 +3036,15 @@ function buildFullViewHTML(sub){
   }
 
   // ── TABLE 1 ──
-  let tF=0,tA=0,tU=0,tK=0,tAus=0,tKm=0;
+  let tF=0,tA=0,tG=0,tU=0,tK=0,tAus=0,tKm=0;
   const bsMap1={};
+  // NEW: Ges h is now a manual field. Older MAs saved before this change have no r.ges,
+  // so fall back to what it used to auto-show (= Anwesenheit) to keep old data displaying correctly.
+  const gesOf=r=>{const anwes=parseFloat(r.anwes)||0;return (r.ges!==undefined&&r.ges!=='')?(parseFloat(r.ges)||0):anwes;};
   rows.forEach(r=>{
     if(r.locked)return;
     const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
-    tF+=fahr;tA+=anwes;tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tKm+=parseFloat(r.km)||0;
+    tF+=fahr;tA+=anwes;tG+=gesOf(r);tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tKm+=parseFloat(r.km)||0;
     if(r.baustelle&&r.baustelle!=='Wochenende'){
       if(!bsMap1[r.baustelle])bsMap1[r.baustelle]={kst:r.kst||'',an:0,fahr:0,aus:0};
       bsMap1[r.baustelle].an+=anwes;
@@ -3044,7 +3055,7 @@ function buildFullViewHTML(sub){
 
   let t1rows='';
   rows.forEach(r=>{
-    const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
+    const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0,ges=gesOf(r);
     t1rows+=`<tr${r.locked?' class="locked"':''}>
       <td class="daynum">${r.day}</td>
       <td class="check">${r.ost?'✓':''}</td>
@@ -3055,7 +3066,7 @@ function buildFullViewHTML(sub){
       <td>${r.zeit||''}</td>
       <td class="num">${r.fahr||''}</td>
       <td class="num">${r.anwes||''}</td>
-      <td class="auto">${anwes?fmt(anwes):''}</td>
+      <td class="num">${ges?fmt(ges):''}</td>
       <td class="auto-o">${fahr>0?fmt(fahr*0.5):''}</td>
       <td class="check">${r.url?'✓':''}</td>
       <td class="check">${r.krank?'✓':''}</td>
@@ -3099,7 +3110,7 @@ function buildFullViewHTML(sub){
   <tbody>${t1rows}</tbody>
   <tfoot><tr>
     <td colspan="7" style="text-align:right;font-size:10px;font-weight:400;">Summe</td>
-    <td>${tF?fmt(tF):''}</td><td>${tA?fmt(tA):''}</td><td>${tA?fmt(tA):''}</td>
+    <td>${tF?fmt(tF):''}</td><td>${tA?fmt(tA):''}</td><td>${tG?fmt(tG):''}</td>
     <td>${tF>0?fmt(tF*0.5):''}</td>
     <td>${tU||''}</td><td>${tK||''}</td>
     <td>${tAus?tAus+'€':''}</td>
@@ -3436,7 +3447,7 @@ async function buildSheetT1(wb, name, month, entry){
   });
 
   // ── DATA ROWS ──
-  let sumFZ=0, sumAnw=0, sumURL=0, sumKrank=0, sumAus=0, sumKm=0;
+  let sumFZ=0, sumAnw=0, sumGes=0, sumURL=0, sumKrank=0, sumAus=0, sumKm=0;
 
   td.forEach(r=>{
     const isWE = r.locked && (r.baustelle==='Wochenende'||r.baustelle==='');
@@ -3445,11 +3456,13 @@ async function buildSheetT1(wb, name, month, entry){
     const isKrank = r.baustelle==='Krankgeschrieben';
     const fahr = parseFloat(r.fahr)||0;
     const anwes = parseFloat(r.anwes)||0;
-    const ges = anwes||0;
+    // NEW: Ges h is now manual. For older MAs saved before this change (no r.ges stored),
+    // fall back to the value it used to auto-display (= Anwesenheit), so old data still exports correctly.
+    const ges = (r.ges!==undefined&&r.ges!=='') ? (parseFloat(r.ges)||0) : (anwes||0);
     const f50 = fahr>0?(fahr*0.5):0;
 
     if(!isWE){
-      sumFZ+=fahr; sumAnw+=anwes;
+      sumFZ+=fahr; sumAnw+=anwes; sumGes+=ges;
       sumURL+=r.url?1:0; sumKrank+=r.krank?1:0;
       sumAus+=r.aus?18:0; sumKm+=parseFloat(r.km)||0;
     }
@@ -3508,7 +3521,7 @@ async function buildSheetT1(wb, name, month, entry){
   // ── SUMME ROW ──
   row = ws.addRow([
     'Summe','','','','','','',
-    sumFZ||'', sumAnw||'', sumAnw||'',
+    sumFZ||'', sumAnw||'', sumGes||'',
     sumFZ>0?parseFloat((sumFZ*0.5).toFixed(2)):'',
     sumURL||'', sumKrank||'',
     sumAus?sumAus+'€':'', sumKm||''
