@@ -3569,18 +3569,22 @@ async function buildSheetT1(wb, name, month, entry){
     row.getCell(ci).border = xlBorder();
   });
 
-  // BS entries on left + Bezeichnung on right
+  // LEFT: real per-Baustelle Zuordnung data — UNCHANGED, still dynamic/based on actual entries that month
   const bsEntries = Object.entries(bsMap);
-  const bsNames = ['Feiertag','Krankgeschrieben','Urlaub','Wochenende',
-    'Baustelle 1','Baustelle 2','Baustelle 3','Baustelle 4','Baustelle 5',
+  // RIGHT: Baustelle-Bezeichnung legend — FIX: only Baustelle 1-10 (matches the portal's own legend table exactly,
+  // no Feiertag/Krankgeschrieben/Urlaub), and now actually fills in the typed Bezeichnung text.
+  const bezNames = ['Baustelle 1','Baustelle 2','Baustelle 3','Baustelle 4','Baustelle 5',
     'Baustelle 6','Baustelle 7','Baustelle 8','Baustelle 9','Baustelle 10'];
 
   let totAn=0,totF=0,totAus=0;
-  const maxRows = Math.max(bsEntries.length, bsNames.length);
+  // NEW: right-side legend row count is now independent of the left table's row count,
+  // so shortening the legend list can never cut off real left-side Zuordnung entries.
+  const maxRows = Math.max(bsEntries.length, bezNames.length);
 
   for(let i=0;i<maxRows;i++){
     const entry2 = bsEntries[i];
-    const bsName = bsNames[i];
+    const bezName = bezNames[i]||''; // NEW
+    const bezText = bezName ? (BS_LIST.find(b=>b.n===bezName)?.b||'') : ''; // NEW: the actual typed name, e.g. "IGS-Magdeburg"
     if(entry2){
       const [bs,d]=entry2;
       totAn+=d.an;totF+=d.fahr;totAus+=d.aus;
@@ -3590,10 +3594,10 @@ async function buildSheetT1(wb, name, month, entry){
         d.fahr?parseFloat(d.fahr.toFixed(2)):'',
         parseFloat((d.an+d.fahr).toFixed(2)),
         d.aus?d.aus+'€':'0,00 €',
-        '', bsName||'', '', '', '', '', '', ''
+        '', bezName, bezText, '', '', '', '', ''
       ]);
     } else {
-      row = ws.addRow(['','','','','','','','',bsName||'','','','','','','']);
+      row = ws.addRow(['','','','','','','','',bezName,bezText,'','','','','']);
     }
     row.height = 14;
     [1,2,4,5,6,7].forEach(ci=>{
