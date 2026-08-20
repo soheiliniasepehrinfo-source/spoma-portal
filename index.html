@@ -1419,6 +1419,12 @@ function gatherSignatures(prefix){
   });
   return sigs;
 }
+// NEW: checks for an ACTUAL typed name or drawing, not just an object shell with empty fields —
+// {} and {polier:{typed:'',drawn:''}} both count as "no real signature yet".
+function sigHasContent(sigs){
+  if(!sigs) return false;
+  return Object.values(sigs).some(r=>r&&(r.typed||r.drawn));
+}
 
 function gatherT1Data(){
   const rows=[];
@@ -1923,12 +1929,14 @@ async function rejectT3(){
 }
 async function exportExcelT3(){
   const sub=USERS[CU]?.status?.[curMonth];
+  const liveSigs3=gatherT3Signature('t3');
+  const priorSigs3=sub?.originalSignatures||sub?.signatures||{};
   const liveEntry={
     ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (same bug as T1/T2, now fixed)
     tbl:3,
     tableData:gatherT3Data(),
-    signatures:gatherT3Signature('t3'),
-    originalSignatures:sub?.originalSignatures||sub?.signatures||{},
+    signatures:liveSigs3,
+    originalSignatures:sigHasContent(priorSigs3)?priorSigs3:liveSigs3, // NEW: fall back to the live signature if no real prior one exists
     submittedAt:sub?.submittedAt||'',
     st:sub?.st||'draft',
   };
@@ -3299,12 +3307,14 @@ function xlAlign(h,v){
 
 async function exportExcelT1(){
   const sub = USERS[CU]?.status?.[curMonth];
+  const liveSigs1=gatherSignatures('t1');
+  const priorSigs1=sub?.originalSignatures||sub?.signatures||{};
   const liveEntry = {
     ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (was the bug)
     tbl:1,
     tableData: gatherT1Data(),
-    signatures: gatherSignatures('t1'),
-    originalSignatures: sub?.originalSignatures || sub?.signatures || {},
+    signatures: liveSigs1,
+    originalSignatures: sigHasContent(priorSigs1)?priorSigs1:liveSigs1, // NEW: fall back to the live signature if no real prior one exists
     pl: selPL || USERS[CU]?.pl || '',
     cc: document.getElementById('t1-cc')?.value || selCC || '',
     submittedAt: sub?.submittedAt || '',
@@ -3315,12 +3325,14 @@ async function exportExcelT1(){
 
 async function exportExcelT2(){
   const sub = USERS[CU]?.status?.[curMonth];
+  const liveSigs2=gatherSignatures('t2');
+  const priorSigs2=sub?.originalSignatures||sub?.signatures||{};
   const liveEntry = {
     ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (was the bug)
     tbl:2,
     tableData: gatherT2Data(),
-    signatures: gatherSignatures('t2'),
-    originalSignatures: sub?.originalSignatures || sub?.signatures || {},
+    signatures: liveSigs2,
+    originalSignatures: sigHasContent(priorSigs2)?priorSigs2:liveSigs2, // NEW: fall back to the live signature if no real prior one exists
     pl: selPL || USERS[CU]?.pl || '',
     cc: document.getElementById('t2-cc')?.value || selCC || '',
     submittedAt: sub?.submittedAt || '',
