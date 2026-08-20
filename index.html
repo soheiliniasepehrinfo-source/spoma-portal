@@ -3375,6 +3375,24 @@ async function buildAndDownloadExcel(name, month, entry, tbl){
       await buildSheetT2(wb, name, month, entry);
     }
 
+    // NEW: password-protect every exported sheet against editing (password: ABCD).
+    // Viewing/opening the file is unaffected — only cell edits require the password.
+    wb.worksheets.forEach(ws=>{
+      ws.protect('ABCD', {
+        selectLockedCells:true,
+        selectUnlockedCells:true,
+        formatCells:false,
+        formatColumns:false,
+        formatRows:false,
+        insertColumns:false,
+        insertRows:false,
+        deleteColumns:false,
+        deleteRows:false,
+        sort:false,
+        autoFilter:false,
+      });
+    });
+
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
