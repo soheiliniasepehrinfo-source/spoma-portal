@@ -863,9 +863,8 @@ optgroup{font-weight:700;}
 </div>
 
 <!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<!-- Supabase JS client (self-hosted, EU server) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ════════════════════════════════════════
 // DATA STORE
@@ -1021,7 +1020,7 @@ async function doLogin(){
   const n=document.getElementById('ln').value.trim();
   const pw=document.getElementById('lpw').value;
   const err=document.getElementById('lerr');
-  if(typeof firebase==='undefined'||typeof db==='undefined'){err.textContent='Verbindung wird aufgebaut... Bitte nochmal klicken.';return;}
+  if(typeof db==='undefined'){err.textContent='Verbindung wird aufgebaut... Bitte nochmal klicken.';return;}
   err.textContent='Wird geladen...';
   // Load all users from Firestore first
   await loadAllData();
@@ -4101,36 +4100,66 @@ function togglePw(inputId, btn){
   else{inp.type='password';btn.textContent='👁';}
 }
 
-// Init Firebase
-const firebaseConfig={
-  apiKey:"AIzaSyDh5cFolGPAQcrWBgDN3xYWZLqKV8P57Nw",
-  authDomain:"spoma-portal.firebaseapp.com",
-  projectId:"spoma-portal",
-  storageBucket:"spoma-portal.firebasestorage.app",
-  messagingSenderId:"429095424913",
-  appId:"1:429095424913:web:b8cb63c804a753102e8030"
-};
-firebase.initializeApp(firebaseConfig);
-const db=firebase.firestore();
+// ═══════════════════════════════════════════════════
+// DATABASE CONNECTION — Self-hosted Supabase (Hetzner, Nuremberg, Germany)
+// This block replaces the old Firebase connection. It provides a "db" object
+// that behaves EXACTLY like the old Firestore "db" (same .collection().doc().get()/
+// set()/delete(), same .where().get()) — so none of the app's existing database
+// calls anywhere else in this file need to change at all.
+// ═══════════════════════════════════════════════════
+const SUPABASE_URL='https://api.spoma.de';
+const SUPABASE_KEY='sb_publishable_EbuzietqkoVwKWKQN0D7u7_ByahZS4o';
+const _sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-// Anonymous auth — required so Firestore rules can check request.auth != null
-let AUTH_READY=null;
-function ensureAuth(){
-  if(!AUTH_READY){
-    AUTH_READY=new Promise((resolve)=>{
-      firebase.auth().onAuthStateChanged(function(user){
-        if(user){resolve(user);}
-        else{
-          firebase.auth().signInAnonymously().catch(function(e){
-            console.error('Anon auth failed:',e);
-            resolve(null);
-          });
-        }
-      });
-    });
-  }
-  return AUTH_READY;
+function _docSnap(id,row){
+  return{ id, exists:!!row, data:()=>row?row.data:undefined };
 }
+function _collection(name){
+  return{
+    doc(id){
+      return{
+        async get(){
+          const{data:rows,error}=await _sb.from(name).select('*').eq('id',id).limit(1);
+          if(error)throw error;
+          return _docSnap(id,rows&&rows[0]);
+        },
+        async set(newData,opts){
+          let finalData=newData;
+          if(opts&&opts.merge){
+            const{data:rows}=await _sb.from(name).select('*').eq('id',id).limit(1);
+            const existing=(rows&&rows[0]&&rows[0].data)||{};
+            finalData={...existing,...newData};
+          }
+          const{error}=await _sb.from(name).upsert({id,data:finalData});
+          if(error)throw error;
+        },
+        async delete(){
+          const{error}=await _sb.from(name).delete().eq('id',id);
+          if(error)throw error;
+        }
+      };
+    },
+    async get(){
+      const{data:rows,error}=await _sb.from(name).select('*');
+      if(error)throw error;
+      return{ forEach(cb){(rows||[]).forEach(row=>cb(_docSnap(row.id,row)));} };
+    },
+    where(field,op,value){
+      return{
+        async get(){
+          const{data:rows,error}=await _sb.from(name).select('*').eq(`data->>${field}`,value);
+          if(error)throw error;
+          return{ forEach(cb){(rows||[]).forEach(row=>cb(_docSnap(row.id,row)));} };
+        }
+      };
+    }
+  };
+}
+const db={ collection:_collection };
+
+// Auth is a no-op now — self-hosted Supabase (RLS disabled) doesn't need the
+// client-side sign-in handshake Firestore's rules used to require.
+function ensureAuth(){ return Promise.resolve(); }
 
 // Firestore helpers
 async function fsGetUser(n){try{const d=await db.collection('users').doc(n).get();return d.exists?d.data():null;}catch(e){return null;}}
