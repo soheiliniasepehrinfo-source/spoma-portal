@@ -1150,7 +1150,7 @@ function t1OnBs(sel){
 function t1RefreshDropdowns(){document.querySelectorAll('#t1-tbody select.bssel').forEach(sel=>{const v=sel.value;sel.innerHTML=bsOpts1();sel.value=v;});}
 function t1TogDay(d,show){const tr=document.querySelector(`#t1-tbody tr[data-day="${d}"]`);if(!tr)return;if(show)tr.classList.remove('hidden');else tr.classList.add('hidden');t1Recalc();}
 
-function openT1(){
+function openT1(skipRestore){
   go('s-t1');
   const u=USERS[CU];
   document.getElementById('t1-sub').textContent=CU+' · Tabelle 1 · '+curMonth;
@@ -1194,6 +1194,59 @@ function openT1(){
     tbody.appendChild(tr);
   }
   buildT1SumTable();buildT1BezTable();t1Recalc();buildSigBoxes('t1-sigs','t1');
+  // NEW: restore this month's saved Tabelle 1 data (fresh from DB) — own timesheet only; PL/Admin edit path passes skipRestore
+  if(!skipRestore)t1RestoreSaved(CU,curMonth);
+}
+
+// NEW: load the latest saved document for this user/month straight from the DB and restore it into Tabelle 1
+let t1RestoreTok=0,t1Touched=false;
+function t1MarkTouched(){t1Touched=true;}
+async function t1RestoreSaved(name,month){
+  const tok=++t1RestoreTok;
+  t1Touched=false;
+  const tb=document.getElementById('t1-tbody');
+  if(tb){tb.addEventListener('input',t1MarkTouched);tb.addEventListener('change',t1MarkTouched);}
+  let sub=null;
+  try{
+    const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+    const d=await db.collection('submissions').doc(docId).get();
+    if(d.exists)sub=d.data();
+  }catch(e){console.error('t1RestoreSaved:',e);return;}
+  if(!sub)return;
+  // Stale / switched screen / user already typing → do nothing
+  if(tok!==t1RestoreTok||CU!==name||curMonth!==month)return;
+  if(sub.tbl&&sub.tbl!==1)return; // saved as another table: don't pour T2/T3 rows into T1
+  const rows=sub.tableData||[];
+  if(!rows.length&&!sigHasContent(sub.signatures))return;
+  if(t1Touched)return;
+  // Keep the in-memory copy in sync with the DB. If the status changed elsewhere, rebuild the screen with the right lock state.
+  const cached=USERS[name]&&USERS[name].status&&USERS[name].status[month];
+  if(USERS[name]){
+    if(!USERS[name].status)USERS[name].status={};
+    const keepUnlock=cached&&cached.st==='unlocked'&&(sub.st==='rejected'||sub.st==='unlocked');
+    if(!keepUnlock){
+      const changed=!cached||cached.st!==sub.st;
+      USERS[name].status[month]=sub;
+      if(changed){openT1(true);}
+    } else {
+      USERS[name].status[month]={...sub,st:'unlocked'};
+    }
+  }
+  fillT1WithData(rows);
+  setTimeout(()=>t1RestoreSigs(sub.signatures||{}),150);
+}
+function t1RestoreSigs(sigs){
+  ['polier','bauleiter'].forEach(role=>{
+    const r=sigs[role];if(!r)return;
+    const id='t1-'+role;
+    const dEl=document.getElementById('d-'+id);if(dEl&&r.datum)dEl.value=r.datum;
+    const tEl=document.getElementById('st-'+id);if(tEl&&r.typed)tEl.value=r.typed;
+    if(r.drawn){
+      const cv=document.getElementById('cv-'+id);
+      if(cv){const img=new Image();img.onload=()=>{cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);};img.src=r.drawn;}
+      setSigMode(id,'draw');
+    } else if(r.typed){setSigMode(id,'type');}
+  });
 }
 
 // Fill T1 table with saved data (for PL/Admin editing a submission)
@@ -1217,8 +1270,8 @@ function fillT1WithData(rows){
     if(ges){
       // NEW: Ges h is now manual. For older MAs saved before this change (no r.ges stored),
       // fall back to the value it used to auto-display (= Anwesenheit), so old data still shows correctly.
-      if(r.ges!==undefined&&r.ges!=='') ges.value=r.ges;
-      else if(r.anwes) ges.value=r.anwes;
+      if(r.ges!==undefined) ges.value=r.ges;   // saved value (even if intentionally empty) wins
+      else if(r.anwes) ges.value=r.anwes;      // only for old data that never stored ges
     }
     const url=tr.querySelector('.url');if(url)url.checked=!!r.url;
     const krank=tr.querySelector('.krank');if(krank)krank.checked=!!r.krank;
@@ -3173,7 +3226,7 @@ async function plEditSubmission(){
     if(tbl===1){
       // Set CU temporarily to the person
       CU=curDetail;curMonth=editingMonth;
-      openT1();
+      openT1(true);
       CU=realCU;
       // Fill with their saved data
       setTimeout(()=>{
