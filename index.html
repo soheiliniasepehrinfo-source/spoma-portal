@@ -578,7 +578,7 @@ optgroup{font-weight:700;}
 <div id="s-person-profile" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="pp-sub">Mitarbeiterprofil</div></div></div>
-  <div class="topbar-actions"><button onclick="go(prevProfileScr)">← Zurück</button></div>
+  <div class="topbar-actions"><button onclick="profileBack()">← Zurück</button></div>
 </div>
 <div class="content">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
@@ -976,7 +976,11 @@ let editingFor=null, editingMonth=null, isEditingForOther=false;
 // HELPERS
 // ════════════════════════════════════════
 function go(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id)?.classList.add('active');}
-function goBack(){go(prevScr);}
+function goBack(){
+  // NEW: PL/Admin edit form (opened via ✏ Bearbeiten) returns to the month report it was opened from (reloaded)
+  if(prevScr==='s-pl-detail'&&curDetail&&curMonth){openSubmissionDetail(curDetail,curMonth);return;}
+  go(prevScr);
+}
 function fmt(n){return n.toFixed(2).replace('.',',');}
 function ini(n){return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
 function isAdm(u){return u&&['admin','admin_pl'].includes(u.role);}
@@ -2015,7 +2019,7 @@ async function viewT3(name,month,backScreen){
   curDetail=name;curMonth=month;
   go('s-t3-review');
   const backBtn=document.getElementById('t3r-back-btn');
-  if(backBtn) backBtn.setAttribute('onclick',`go('${backScreen||'s-history'}')`);
+  if(backBtn) backBtn.setAttribute('onclick',`t3rBack('${backScreen||'s-history'}')`);
   document.getElementById('t3r-name').textContent=name+' · '+month+' · Tabelle 3';
   document.getElementById('t3r-badge').className='badge b-miss';
   document.getElementById('t3r-badge').textContent='Wird geladen...';
@@ -2098,7 +2102,7 @@ async function confirmT3(){
     };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     toast('✅ Buchhaltung bestätigt!');
-    await viewT3(curDetail,curMonth,document.getElementById('t3r-back-btn').getAttribute('onclick').match(/'([^']+)'/)[1]);
+    await t3AfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
 async function rejectT3(){
@@ -2114,7 +2118,7 @@ async function rejectT3(){
     };
     await db.collection('submissions').doc(docId).set(upd,{merge:true});
     toast('Abgelehnt — Projektleiter kann neu einreichen.','err');
-    await viewT3(curDetail,curMonth,document.getElementById('t3r-back-btn').getAttribute('onclick').match(/'([^']+)'/)[1]);
+    await t3AfterAction();
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
 async function exportExcelT3(){
@@ -2262,7 +2266,7 @@ function buildPLDashboard(){
     if(pendingCount>0) statusHtml+=`<span class="badge b-sent" style="margin:2px;">${pendingCount} ausstehend</span>`;
     if(approvedCount>0) statusHtml+=`<span class="badge b-ok" style="margin:2px;">${approvedCount} bestätigt</span>`;
     if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
-    const profileAction=isRealMember?`openPersonProfile('${name}','s-pl')`:`openSubmissionDetail('${name}','${latestMonth}')`;
+    const profileAction=isRealMember?`openPersonProfile('${name}','s-pl')`:`openSubmissionDetail('${name}','${latestMonth}','pl')`;
     const profileLabel=isRealMember?'👁 Profil öffnen':'👁 CC-Abrechnung öffnen';
     tr.innerHTML=`
       <td>
@@ -2277,6 +2281,42 @@ function buildPLDashboard(){
       </td>`;
     tbody.appendChild(tr);
   });
+}
+
+// ── NEW: navigation helpers (Admin/PL: people list → person's Monatsabrechnungen → month report → edit) ──
+let pldOrigin='pl'; // where the month report was opened from: 'profile' (person's list) or 'pl' (PL overview, direct)
+function navRefreshLists(target){
+  try{
+    if(target==='s-admin'){buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();}
+    else{buildPLStats();buildPLDashboard();}
+  }catch(e){console.error('navRefreshLists:',e);}
+}
+// Back from a person's Monatsabrechnung list → people list (selected Projektleiter / tab state is kept), counters refreshed
+function profileBack(){
+  const t=prevProfileScr||'s-pl';
+  navRefreshLists(t);
+  go(t);
+}
+// Back from a month report → the same person's refreshed Monatsabrechnung list (or PL overview if opened directly from there)
+function pldBack(){
+  if(pldOrigin==='profile'&&curDetail){openPersonProfile(curDetail,prevProfileScr||'s-admin');}
+  else{navRefreshLists(isAdm(USERS[CU])?'s-admin':'s-pl');go('s-pl');}
+}
+// Back from the Tabelle-3 review screen
+function t3rBack(screen){
+  if(screen==='s-person-profile'&&curDetail){openPersonProfile(curDetail,prevProfileScr||'s-admin');}
+  else go(screen);
+}
+// After Bestätigen/Ablehnen of a Tabelle-3 review: back to the refreshed person list (or re-render when not opened from a profile)
+async function t3AfterAction(){
+  const back=document.getElementById('t3r-back-btn').getAttribute('onclick').match(/'([^']+)'/)[1];
+  if(back==='s-person-profile'){
+    await loadAllData();
+    navRefreshLists(prevProfileScr||'s-admin');
+    await openPersonProfile(curDetail,prevProfileScr||'s-admin');
+  } else {
+    await viewT3(curDetail,curMonth,back);
+  }
 }
 
 // Open person profile with list of months
@@ -2348,7 +2388,7 @@ async function openPersonProfile(name, fromScreen){
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           ${stampH(sub.stamp||st)}
           <span class="badge ${stB(st)}">${stL(st)}</span>
-          <button class="btn-sm btn-primary" onclick="openSubmissionDetail('${name}','${month}')">👁 Öffnen</button>
+          <button class="btn-sm btn-primary" onclick="openSubmissionDetail('${name}','${month}','profile')">👁 Öffnen</button>
           <button class="btn-sm btn-dark" onclick="exportPersonExcel('${name}','${month}')">⬇ Excel</button>
         </div>`;
       list.appendChild(row);
@@ -2359,11 +2399,12 @@ async function openPersonProfile(name, fromScreen){
 }
 
 // Open a specific month submission - works for PL, Admin, Christin Frank, Sepehr
-async function openSubmissionDetail(name, month){
+async function openSubmissionDetail(name, month, origin){
+  if(origin) pldOrigin = origin; // 'profile' | 'pl'; when omitted (re-open after save/back) the previous origin is kept
   curDetail = name; curMonth = month;
   go('s-pl-detail');
   const backBtnOSD=document.getElementById('pld-back-btn');
-  if(backBtnOSD) backBtnOSD.setAttribute('onclick',"go('s-pl')");
+  if(backBtnOSD) backBtnOSD.setAttribute('onclick',"pldBack()");
   document.getElementById('pld-name').textContent = name + ' · ' + month;
   document.getElementById('pld-badge').className = 'badge b-sent';
   document.getElementById('pld-badge').textContent = 'Wird geladen...';
@@ -2377,7 +2418,7 @@ async function openSubmissionDetail(name, month){
       document.getElementById('pld-content').innerHTML = '<div style="padding:20px;color:var(--err);">Keine Abrechnung gefunden.</div>';
       return;
     }
-    if(sub.tbl===3){ await viewT3(name,month,'s-pl'); return; } // NEW: Tabelle 3 uses its own isolated review screen
+    if(sub.tbl===3){ await viewT3(name,month,pldOrigin==='profile'?'s-person-profile':'s-pl'); return; } // NEW: Tabelle 3 uses its own isolated review screen
     if(!USERS[name]) USERS[name] = {status:{}};
     if(!USERS[name].status) USERS[name].status = {};
     USERS[name].status[month] = sub;
@@ -2615,6 +2656,13 @@ async function sendToBuchhaltung(){
 }
 
 function refreshAfterAction(){
+  // NEW: when the action was done inside a month report opened from a person's list → return to that person's refreshed list
+  if(document.querySelector('.screen.active')?.id==='s-pl-detail'&&pldOrigin==='profile'&&document.getElementById('pld-back-btn')?.getAttribute('onclick')==='pldBack()'&&curDetail){
+    const t=prevProfileScr||'s-admin';
+    navRefreshLists(t);
+    openPersonProfile(curDetail,t);
+    return;
+  }
   if(isAdm(USERS[CU])){
     buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();
     go('s-admin');
@@ -3347,6 +3395,7 @@ async function plEditSubmission(){
     const sub=doc.data();
     const tbl=sub.tbl||1;
     // Save editing context
+    prevScr='s-pl-detail'; // NEW: Back from the edit form returns to this month report
     editingFor=curDetail; // who we are editing for
     editingMonth=curMonth;
     selPL=sub.pl||'';
