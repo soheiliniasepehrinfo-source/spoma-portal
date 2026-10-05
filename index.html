@@ -442,7 +442,7 @@ optgroup{font-weight:700;}
   <div class="action-bar">
     <button class="btn-primary" id="t1-submit-btn" onclick="submitT1()">✈ EINREICHEN</button>
     <button class="btn-dark" onclick="exportExcelT1()">⬇ Excel (.xlsx)</button>
-    <button onclick="saveT1Draft()">💾 Speichern</button>
+    <button id="t1-save-btn" onclick="saveT1Draft()">💾 Speichern</button>
     <div id="t1-locked-msg" style="display:none;background:var(--warn-bg);border:1px solid var(--gold);color:var(--warn-text);font-size:11px;padding:6px 12px;border-radius:4px;">🔒 Gesperrt — Projektleiter um Freigabe bitten</div>
   </div>
 </div>
@@ -519,9 +519,10 @@ optgroup{font-weight:700;}
   </div>
   <div class="sig-section"><div class="section-title">Unterschriften & Datum</div><div class="sig-row-s" id="t2-sigs"></div></div>
   <div class="action-bar">
-    <button class="btn-primary" onclick="submitT2()">✈ EINREICHEN</button>
+    <button class="btn-primary" id="t2-submit-btn" onclick="submitT2()">✈ EINREICHEN</button>
     <button class="btn-dark" onclick="exportExcelT2()">⬇ Excel (.xlsx)</button>
-    <button onclick="saveT2Draft()">💾 Speichern</button>
+    <button id="t2-save-btn" onclick="saveT2Draft()">💾 Speichern</button>
+    <div id="t2-locked-msg" style="display:none;background:var(--warn-bg);border:1px solid var(--gold);color:var(--warn-text);font-size:11px;padding:6px 12px;border-radius:4px;">🔒 Gesperrt — Projektleiter um Freigabe bitten</div>
   </div>
 </div>
 </div>
@@ -1166,6 +1167,7 @@ function openT1(skipRestore){
   document.getElementById('t1-stamp').innerHTML=(st!=='missing')?stampH(entry.stamp||st):'';
   const canEdit=st==='missing'||st==='draft'||st==='unlocked'||locked;
   const btn=document.getElementById('t1-submit-btn');btn.disabled=!canEdit;btn.style.opacity=canEdit?'1':'0.4';
+  const sbtn1=document.getElementById('t1-save-btn');if(sbtn1){sbtn1.disabled=!canEdit;sbtn1.style.opacity=canEdit?'1':'0.4';} // NEW: Save is locked together with Submit
   document.getElementById('t1-locked-msg').style.display=(!canEdit&&st!=='missing')?'flex':'none';
   const ni=document.getElementById('t1-notif');
   if(st==='submitted')ni.innerHTML=`<div class="notif">✅ Abrechnung für <strong>${curMonth}</strong> eingereicht — wartet auf Prüfung durch <strong>${entry.pl||selPL}</strong>. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
@@ -1287,7 +1289,7 @@ function fillT2WithData(rows){
   if(!rows||!rows.length)return;
   const tbody=document.getElementById('t2-tbody');
   rows.forEach(r=>{
-    const tr=tbody.querySelector(`tr[data-day="${r.day}"]`);
+    const tr=tbody.querySelector(`tr[data-day="${r.day}"]:not(.t2-split)`);
     if(!tr)return;
     const bs=tr.querySelector('.bs2');if(bs&&r.baustelle)bs.value=r.baustelle;
     const kst=tr.querySelector('.kst2');if(kst&&r.kst)kst.value=r.kst;
@@ -1296,6 +1298,9 @@ function fillT2WithData(rows){
     const bem=tr.querySelector('.bem2');if(bem&&r.bem)bem.value=r.bem;
     const vst=tr.querySelector('.vst2');if(vst)vst.checked=!!r.vst;
     const sfr=tr.querySelector('.sfr2');if(sfr&&r.sfr)sfr.value=r.sfr;
+    // NEW: restore locked (Wochenende) rows and the 2nd Baustelle (split) exactly as saved
+    if(r.locked||r.baustelle==='Wochenende')tr.className='locked';
+    else if(r.split)t2AddSplit(parseInt(r.day),r.split);
   });
   t2Recalc();
 }
@@ -1379,6 +1384,11 @@ async function saveT1Draft(){
     // If PL/Admin is editing someone else's already-submitted sheet, keep the existing status
     // (submitted/waiting_cc/cc_confirmed/approved/etc.) instead of downgrading it to 'draft'.
     const isEditingSomeoneElse=(CU!==targetName);
+    // NEW GUARD: a normal user can never overwrite a locked (submitted/confirmed/forwarded…) month or turn it back into 'draft'.
+    // 'unlocked' = PL release; 'rejected' is editable only after the user chose "Bearbeiten" in the history (cache set to 'unlocked'). PL/Admin editing someone else keeps the status (keepSt).
+    if(!isEditingSomeoneElse&&prev.st&&!(['missing','draft','unlocked'].includes(prev.st)||(prev.st==='rejected'&&USERS[targetName]?.status?.[targetMonth]?.st==='unlocked'))&&!USERS[targetName]?.locked?.[targetMonth]){
+      toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt und kann nicht mehr überschrieben werden.','err');return;
+    }
     const keepSt=isEditingSomeoneElse&&prev.st&&prev.st!=='missing';
     const draftData={
       st:keepSt?prev.st:'draft', stamp:keepSt?(prev.stamp||'pending'):'pending',
@@ -1398,17 +1408,102 @@ async function saveT1Draft(){
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
 
+// NEW (Tabelle 2): read-only state for submitted / confirmed / forwarded months (same rule as Tabelle 1:
+// editable only while missing / draft / unlocked, or released via u.locked)
+const T2_EDITABLE_ST=['missing','draft','unlocked'];
+let t2ReadOnly=false;
+function t2ApplyLock(){
+  const ro=t2ReadOnly;
+  if(ro){
+    document.querySelectorAll('#t2-tbody input,#t2-tbody select,#t2-tbody button,#t2-sigs input,#t2-sigs select,#t2-sigs button').forEach(e=>{e.disabled=true;});
+    document.querySelectorAll('#t2-sigs canvas').forEach(c=>{c.style.pointerEvents='none';c.style.opacity='0.7';});
+  }
+  ['t2-submit-btn','t2-save-btn'].forEach(id=>{const b=document.getElementById(id);if(b){b.disabled=ro;b.style.opacity=ro?'0.4':'1';}});
+  const m=document.getElementById('t2-locked-msg');if(m)m.style.display=ro?'flex':'none';
+}
+
+// NEW (Tabelle 2): the OPEN Tabelle-2 form is the single source of truth for WHO and WHICH MONTH is written.
+function t2FormTarget(){
+  const name=(document.getElementById('t2-name')?.value||'').trim();
+  const month=(document.getElementById('t2-monat')?.textContent||'').trim();
+  if(!name||!month||!/^\S+\s+\d{4}$/.test(month))throw new Error('Person/Monat im Formular nicht erkennbar – nicht gespeichert.');
+  if(!USERS[name])throw new Error('Person "'+name+'" unbekannt – nicht gespeichert.');
+  const me=USERS[CU];
+  if(name!==CU&&!(me&&(isPL(me)||isAdm(me))))throw new Error('Keine Berechtigung, für '+name+' zu speichern.');
+  return {name,month,docId:name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_')};
+}
+function t2AssertTarget(t){
+  const n=t2FormTarget();
+  if(n.docId!==t.docId)throw new Error('Formular hat gewechselt ('+n.docId+' ≠ '+t.docId+') – nicht gespeichert.');
+}
+// NEW (Tabelle 2): load the latest saved document for this user/month fresh from the DB and restore it into the form
+let t2RestoreTok=0,t2Touched=false;
+function t2MarkTouched(){t2Touched=true;}
+async function t2RestoreSaved(name,month){
+  const tok=++t2RestoreTok;
+  t2Touched=false;
+  const tb=document.getElementById('t2-tbody');
+  if(tb){tb.addEventListener('input',t2MarkTouched);tb.addEventListener('change',t2MarkTouched);}
+  let sub=null;
+  try{
+    const docId=name.replace(/ /g,'_')+'_'+month.replace(/ /g,'_');
+    const d=await db.collection('submissions').doc(docId).get();
+    if(d.exists)sub=d.data();
+  }catch(e){console.error('t2RestoreSaved:',e);return;}
+  if(!sub)return;
+  if(tok!==t2RestoreTok||CU!==name||curMonth!==month)return;
+  if(sub.tbl&&sub.tbl!==2)return; // saved as another table: never pour T1/T3 rows into T2
+  const rows=sub.tableData||[];
+  if(!rows.length&&!sigHasContent(sub.signatures))return;
+  if(t2Touched)return;
+  const cached=USERS[name]&&USERS[name].status&&USERS[name].status[month];
+  if(USERS[name]){
+    if(!USERS[name].status)USERS[name].status={};
+    const keepUnlock=cached&&cached.st==='unlocked'&&(sub.st==='rejected'||sub.st==='unlocked');
+    if(!keepUnlock){
+      const changed=!cached||cached.st!==sub.st;
+      USERS[name].status[month]=sub;
+      if(changed){openT2(true);}
+    } else {
+      USERS[name].status[month]={...sub,st:'unlocked'};
+    }
+  }
+  document.querySelectorAll('#t2-tbody tr.t2-split').forEach(r=>r.remove()); // drop any stale 2nd-Baustelle rows; the fresh DB state decides
+  fillT2WithData(rows);
+  t2ApplyLock();
+  setTimeout(()=>{t2RestoreSigs(sub.signatures||{});t2ApplyLock();},150);
+}
+function t2RestoreSigs(sigs){
+  ['polier','bauleiter'].forEach(role=>{
+    const r=sigs[role];if(!r)return;
+    const id='t2-'+role;
+    const dEl=document.getElementById('d-'+id);if(dEl&&r.datum)dEl.value=r.datum;
+    const tEl=document.getElementById('st-'+id);if(tEl&&r.typed)tEl.value=r.typed;
+    if(r.drawn){
+      const cv=document.getElementById('cv-'+id);
+      if(cv){const img=new Image();img.onload=()=>{cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);};img.src=r.drawn;}
+      setSigMode(id,'draw');
+    } else if(r.typed){setSigMode(id,'type');}
+  });
+}
+
 async function saveT2Draft(){
   const u=USERS[CU];
   const pl=selPL||u.pl;
   if(!pl&&!(isPL(u)||isAdm(u))){toast('Bitte zuerst Projektleiter auswählen.','err');return;}
-  const targetName=isEditingForOther&&editingFor?editingFor:CU;
-  const targetMonth=isEditingForOther&&editingMonth?editingMonth:curMonth;
-  const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
+  let T;try{T=t2FormTarget();}catch(e){toast('Fehler: '+e.message,'err');return;}
+  const targetName=T.name;
+  const targetMonth=T.month;
+  const docId=T.docId;
   try{
     const existing=await db.collection('submissions').doc(docId).get();
     const prev=existing.exists?existing.data():{};
-    const isEditingSomeoneElse2=isEditingForOther||(CU!==targetName);
+    const isEditingSomeoneElse2=(CU!==targetName);
+    // NEW GUARD: a normal user can never overwrite a locked (submitted/confirmed/forwarded…) month or turn it back into 'draft'.
+    // 'rejected' / 'unlocked' = explicit reopen mechanism of the existing workflow. PL/Admin editing someone else keeps the status (keepSt2).
+    if(!isEditingSomeoneElse2&&prev.st&&!['missing','draft','unlocked','rejected'].includes(prev.st)&&!USERS[targetName]?.locked?.[targetMonth]){
+      toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt und kann nicht mehr überschrieben werden.','err');return;
+    }
     const keepSt2=isEditingSomeoneElse2&&prev.st&&prev.st!=='missing';
     const draftData={
       st:keepSt2?prev.st:'draft', stamp:keepSt2?(prev.stamp||'pending'):'pending',
@@ -1420,6 +1515,7 @@ async function saveT2Draft(){
       originalSignatures:prev.originalSignatures||prev.signatures||{},
       editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:isEditingSomeoneElse2?'edited':'saved_draft'}]
     };
+    t2AssertTarget(T);
     await db.collection('submissions').doc(docId).set(draftData,{merge:true});
     if(!USERS[targetName].status)USERS[targetName].status={};
     USERS[targetName].status[targetMonth]=draftData;
@@ -1443,6 +1539,10 @@ async function submitT1(){
     if(eDoc.exists){prevSub1=eDoc.data();origSigs1=prevSub1.originalSignatures||prevSub1.signatures||{};}}catch(e){}
   // If PL/Admin is editing, keep existing status; only employee resets to submitted
   const isEditing=(CU!==targetName);
+  // NEW GUARD (same rule as Save): a normal user cannot re-submit over a locked month
+  if(!isEditing&&prevSub1.st&&!(['missing','draft','unlocked'].includes(prevSub1.st)||(prevSub1.st==='rejected'&&USERS[targetName]?.status?.[targetMonth]?.st==='unlocked'))&&!USERS[targetName]?.locked?.[targetMonth]){
+    toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt.','err');return;
+  }
   const newSt=isEditing?(prevSub1.st||'submitted'):'submitted';
   const newAction=isEditing?'edited':'submitted';
   const prevHist1=prevSub1.editHistory||[];
@@ -1535,7 +1635,7 @@ function gatherT1Data(){
 // ════════════════════════════════════════
 // TABLE 2 — CONFIRMED
 // ════════════════════════════════════════
-function openT2(){
+function openT2(skipRestore){
   go('s-t2');
   const u=USERS[CU];
   document.getElementById('t2-sub').textContent=CU+' · Tabelle 2 · '+curMonth;
@@ -1578,6 +1678,9 @@ function openT2(){
     entry.tableData.forEach(r=>{ if(r.split) t2AddSplit(parseInt(r.day),r.split); });
   }
   buildT2ZuordTable();t2Recalc();buildSigBoxes('t2-sigs','t2');
+  t2ReadOnly=!(T2_EDITABLE_ST.includes(st)||u.locked?.[curMonth]);
+  t2ApplyLock();
+  if(!skipRestore)t2RestoreSaved(CU,curMonth); // NEW: fresh DB load + full restore (own timesheet; PL/Admin edit path passes skipRestore)
 }
 
 function t2OnSpecial(sel){
@@ -1695,8 +1798,9 @@ function updateT2Zuord(bsMap){
   document.getElementById('t2z-a').textContent=fmt(sA)+'%';document.getElementById('t2z-aus').textContent=fmt(sAus)+' €';document.getElementById('t2z-k').textContent=fmt(sAus)+' €';
 }
 async function submitT2(){
-  const targetName = (isEditingForOther && editingFor) ? editingFor : CU;
-  const targetMonth = (isEditingForOther && editingMonth) ? editingMonth : curMonth;
+  let T2T;try{T2T=t2FormTarget();}catch(e){toast('Fehler: '+e.message,'err');return;}
+  const targetName = T2T.name;
+  const targetMonth = T2T.month;
   const u=USERS[targetName]||USERS[CU];
   const pl=selPL||u.pl||document.getElementById('t2-pl')?.value||null;
   const cc2=document.getElementById('t2-cc')?.value||selCC||'';
@@ -1706,6 +1810,10 @@ async function submitT2(){
   try{const eDoc2=await db.collection('submissions').doc(targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_')).get();
     if(eDoc2.exists){prevSub2=eDoc2.data();origSigs2=prevSub2.originalSignatures||prevSub2.signatures||{};}}catch(e){}
   const isEditing2=(CU!==targetName);
+  // NEW GUARD (same rule as Save): a normal user cannot re-submit over a locked month
+  if(!isEditing2&&prevSub2.st&&!['missing','draft','unlocked','rejected'].includes(prevSub2.st)&&!USERS[targetName]?.locked?.[targetMonth]){
+    toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt.','err');return;
+  }
   const newSt2=isEditing2?(prevSub2.st||'submitted'):'submitted';
   const newAction2=isEditing2?'edited':'submitted';
   const prevHist2=prevSub2.editHistory||[];
@@ -1722,6 +1830,7 @@ async function submitT2(){
   const docId=targetName.replace(/ /g,'_')+'_'+targetMonth.replace(/ /g,'_');
   subData.employeeName=targetName;subData.month=targetMonth;
   try{
+    t2AssertTarget(T2T);
     await db.collection('submissions').doc(docId).set(subData,{merge:true});
     if(!USERS[targetName].status)USERS[targetName].status={};
     USERS[targetName].status[targetMonth]=subData;
@@ -1730,6 +1839,7 @@ async function submitT2(){
   if(targetName===CU&&!isEditing2){toast('✅ Erfolgreich eingereicht! Tabelle 2 für '+targetMonth+' wurde an '+pl+' gesendet.');}
   else{toast('✅ Tabelle 2 für '+targetMonth+' ('+targetName+') gespeichert!');}
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
+  else if(!isEditing2){openT2();} // NEW: own submit → reopen read-only with the saved data
   const sb=document.getElementById('t2-badge');sb.className='badge b-sent';sb.textContent='Eingereicht';
   document.getElementById('t2-notif').innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
 }
@@ -3265,7 +3375,7 @@ async function plEditSubmission(){
       },100);
     } else {
       CU=curDetail;curMonth=editingMonth;
-      openT2();
+      openT2(true);
       CU=realCU;
       setTimeout(()=>{
         fillT2WithData(sub.tableData||[]);
