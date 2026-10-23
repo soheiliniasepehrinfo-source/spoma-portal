@@ -1170,8 +1170,15 @@ function t1OnBs(sel){
 function t1RefreshDropdowns(){document.querySelectorAll('#t1-tbody select.bssel').forEach(sel=>{const v=sel.value;sel.innerHTML=bsOpts1();sel.value=v;});}
 function t1TogDay(d,show){const tr=document.querySelector(`#t1-tbody tr[data-day="${d}"]`);if(!tr)return;if(show)tr.classList.remove('hidden');else tr.classList.add('hidden');t1Recalc();}
 
+// Baustellen-Bezeichnungen are part of the month's saved data: gather / apply / reset per month
+function gatherT1Bez(){return BS_LIST.map(b=>b.b||'');}
+function applyT1Bez(arr){
+  BS_LIST.forEach((b,i)=>{b.b=(Array.isArray(arr)&&typeof arr[i]==='string')?arr[i]:'';});
+  buildT1BezTable();t1RefreshDropdowns();
+}
 function openT1(skipRestore){
   go('s-t1');
+  BS_LIST.forEach(b=>{b.b='';}); // every month starts blank — nothing carried over from another month/employee
   const u=USERS[CU];
   document.getElementById('t1-sub').textContent=CU+' · Tabelle 1 · '+curMonth;
   document.getElementById('t1-name').value=CU;document.getElementById('t1-nr').value=u.nr||'';
@@ -1253,7 +1260,7 @@ async function t1RestoreSaved(name,month){
       USERS[name].status[month]={...sub,st:'unlocked'};
     }
   }
-  fillT1WithData(rows);
+  fillT1WithData(rows,sub.bez);
   setTimeout(()=>t1RestoreSigs(sub.signatures||{}),150);
 }
 function t1RestoreSigs(sigs){
@@ -1271,7 +1278,8 @@ function t1RestoreSigs(sigs){
 }
 
 // Fill T1 table with saved data (for PL/Admin editing a submission)
-function fillT1WithData(rows){
+function fillT1WithData(rows,bez){
+  applyT1Bez(bez);
   if(!rows||!rows.length)return;
   const tbody=document.getElementById('t1-tbody');
   rows.forEach(r=>{
@@ -1364,7 +1372,7 @@ function updateT1SumTable(bsMap){
 function buildT1BezTable(){
   const tbody=document.getElementById('t1-bztbody');if(!tbody)return;tbody.innerHTML='';
   BS_LIST.forEach((b,i)=>{const tr=document.createElement('tr');
-    tr.innerHTML=`<td style="white-space:nowrap;">${b.n}</td><td><input type="text" value="${b.b}" placeholder="Bezeichnung..." style="min-width:140px;" oninput="BS_LIST[${i}].b=this.value.trim();t1RefreshDropdowns();"></td>`;
+    tr.innerHTML=`<td style="white-space:nowrap;">${b.n}</td><td><input type="text" value="${String(b.b||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" placeholder="Bezeichnung..." style="min-width:140px;" oninput="BS_LIST[${i}].b=this.value.trim();t1Touched=true;t1RefreshDropdowns();"></td>`;
     tbody.appendChild(tr);});
 }
 
@@ -1414,6 +1422,7 @@ async function saveT1Draft(){
       employeeName:targetName, month:targetMonth,
       savedAt:now(),
       tableData:gatherT1Data(),
+      bez:gatherT1Bez(),
       signatures:gatherSignatures('t1'),
       originalSignatures:prev.originalSignatures||prev.signatures||{},
       editHistory:[...(prev.editHistory||[]),{by:CU,at:now(),role:USERS[CU]?.role||'employee',action:isEditingSomeoneElse?'edited':'saved_draft'}]
@@ -1570,6 +1579,7 @@ async function submitT1(){
     editedAt:isEditing?now():null,
     employeeName:targetName,month:targetMonth,
     tableData:gatherT1Data(),
+    bez:gatherT1Bez(),
     signatures:newSigs1,
     originalSignatures:Object.keys(origSigs1).length?origSigs1:newSigs1,
     currentSignatures:newSigs1,
@@ -3392,7 +3402,9 @@ function buildFullViewHTML(sub){
     <td>${fmt(totAn)}</td><td>${fmt(totF)}</td>
     <td>${fmt(totAn+totF)}</td><td>${fmt(totAus)} €</td>
   </tr></tfoot>
-  </table></div>` + buildSigViewHTML(sub);
+  </table>
+  <table class="bt"><thead><tr><th>Baustelle</th><th style="min-width:130px;">Bezeichnung</th></tr></thead>
+  <tbody>${BS_LIST.map((b,i)=>`<tr><td>${b.n}</td><td>${String((sub.bez&&sub.bez[i])||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table></div>` + buildSigViewHTML(sub);
 }
 
 // Keep old name as alias for compatibility
@@ -3428,7 +3440,7 @@ async function plEditSubmission(){
       CU=realCU;
       // Fill with their saved data
       setTimeout(()=>{
-        fillT1WithData(sub.tableData||[]);
+        fillT1WithData(sub.tableData||[],sub.bez);
         // Show edit banner
         document.getElementById('t1-notif').innerHTML=`<div class="notif" style="background:#FFF3CD;color:#856404;border:1px solid #ffc107;">
           ✏ Du bearbeitest die Abrechnung von <strong>${editingFor}</strong> für <strong>${editingMonth}</strong>.
@@ -3567,6 +3579,7 @@ async function exportExcelT1(){
     ...sub, // NEW: spread FIRST so it never overwrites the live values gathered below (was the bug)
     tbl:1,
     tableData: gatherT1Data(),
+    bez: gatherT1Bez(),
     signatures: liveSigs1,
     originalSignatures: sigHasContent(priorSigs1)?priorSigs1:liveSigs1, // NEW: fall back to the live signature if no real prior one exists
     pl: selPL || USERS[CU]?.pl || '',
@@ -3875,7 +3888,7 @@ async function buildSheetT1(wb, name, month, entry){
     const fixedEntry = bsFixedList[i];
     const d = fixedEntry ? (bsMap[fixedEntry.n]||{kst:fixedEntry.k||'',an:0,fahr:0,aus:0}) : null;
     const bezName = bezNames[i]||'';
-    const bezText = bezName ? (BS_LIST.find(b=>b.n===bezName)?.b||'') : '';
+    const bezText = bezName ? ((entry?.bez&&entry.bez[i])||'') : '';
     if(fixedEntry){
       totAn+=d.an;totF+=d.fahr;totAus+=d.aus;
       row = ws.addRow([
