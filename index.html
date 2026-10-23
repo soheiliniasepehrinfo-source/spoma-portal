@@ -3646,7 +3646,7 @@ async function buildAndDownloadExcel(name, month, entry, tbl){
 
 async function buildSheetT1(wb, name, month, entry){
   const ws = wb.addWorksheet('Monatsabrechnung', {
-    pageSetup:{paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0},
+    pageSetup:{paperSize:8, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:1, horizontalCentered:true, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}},
     views:[{state:'normal'}]
   });
 
@@ -3685,11 +3685,12 @@ async function buildSheetT1(wb, name, month, entry){
   // ── ROW 2: Info ──
   const tarif = entry?.tarif || '';
   row = ws.addRow([
-    'Name:', name, '', 'Monat:', month, '', 'Personal-Nr:', USERS[name]?.nr||'–',
+    'Name:', name, '', '', '', '', 'Personal-Nr:', USERS[name]?.nr||'–',
     'PL:', entry?.pl||USERS[name]?.pl||'–', '', 'CC-PL:', entry?.cc||'–', '', ''
   ]);
   row.height = 16;
-  ['A2','D2','G2','J2','L2'].forEach(c=>{
+  ws.mergeCells(`B${row.number}:E${row.number}`);
+  ['A2','G2','J2','L2'].forEach(c=>{
     ws.getCell(c).font = xlFont(true,9,XL_BLACK);
     ws.getCell(c).fill = xlFill(XL_GRAY);
   });
@@ -3698,10 +3699,14 @@ async function buildSheetT1(wb, name, month, entry){
   });
 
   // ── ROW 3: Tarifgebiet ──
-  row = ws.addRow(['Tarifgebiet:', tarif||'OST', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+  row = ws.addRow(['Tarifgebiet:', '', '', '', tarif||'OST', '', 'Monat:', month, '', '', '', '', '', '', '']);
   row.height = 14;
+  ws.mergeCells(`A${row.number}:D${row.number}`);
+  ws.mergeCells(`H${row.number}:J${row.number}`);
+  ws.getCell('G3').font = xlFont(true,9,XL_BLACK); ws.getCell('G3').fill = xlFill(XL_GRAY);
+  ws.getCell('H3').font = xlFont(false,9,XL_BLACK); ws.getCell('H3').alignment = xlAlign('left','middle');
   ws.getCell('A3').font = xlFont(true,9,XL_BLACK);
-  ws.getCell('B3').font = xlFont(false,9,XL_BLACK);
+  ws.getCell('E3').font = xlFont(false,9,XL_BLACK);
 
   // ── ROW 4: empty ──
   ws.addRow([]);
@@ -3803,7 +3808,8 @@ async function buildSheetT1(wb, name, month, entry){
     cell.alignment = xlAlign('center','middle');
     cell.border = {top:{style:'medium',color:{argb:XL_GOLD}}};
   });
-  ws.getCell(`A${row.number}`).alignment = xlAlign('right','middle');
+  ws.mergeCells(`A${row.number}:D${row.number}`);
+  ws.getCell(`A${row.number}`).alignment = xlAlign('left','middle');
 
   ws.addRow([]);
 
@@ -3821,24 +3827,22 @@ async function buildSheetT1(wb, name, month, entry){
   });
 
   // Zuordnung header
-  row = ws.addRow(['ZUORDNUNG AUF DEN BAUSTELLEN','','','','','','','','Baustelle','Bezeichnung','','','','','']);
+  row = ws.addRow(['ZUORDNUNG AUF DEN BAUSTELLEN','','','','','','','','','Baustelle','','Bezeichnung','','','']);
   row.height = 16;
-  ws.mergeCells(`A${row.number}:G${row.number}`);
-  ws.mergeCells(`I${row.number}:J${row.number}`);
-  row.getCell(1).font = xlFont(true,9,XL_WHITE);
-  row.getCell(1).fill = xlFill(XL_DGRAY);
-  row.getCell(9).font = xlFont(true,9,XL_WHITE);
-  row.getCell(9).fill = xlFill(XL_DGRAY);
-  row.getCell(10).font = xlFont(true,9,XL_WHITE);
-  row.getCell(10).fill = xlFill(XL_DGRAY);
+  ws.mergeCells(`A${row.number}:I${row.number}`);
+  ws.mergeCells(`J${row.number}:K${row.number}`);
+  ws.mergeCells(`L${row.number}:O${row.number}`);
+  [1,10,12].forEach(ci=>{ row.getCell(ci).font = xlFont(true,9,XL_WHITE); row.getCell(ci).fill = xlFill(XL_DGRAY); });
 
   // Zuordnung sub-header
-  row = ws.addRow(['Baustelle','Kostenstelle','','Anwesenheit h','Fahrzeit h','Summe h','Auslöse','','','','','','','','']);
-  row.height = 14;
-  [1,2,4,5,6,7].forEach(ci=>{
+  row = ws.addRow(['Baustelle','','','','Kostenstelle','Anwesenheit h','Fahrzeit h','Summe h','Auslöse','','','','','','']);
+  row.height = 18;
+  ws.mergeCells(`A${row.number}:D${row.number}`);
+  [1,5,6,7,8,9].forEach(ci=>{
     row.getCell(ci).font = xlFont(true,9,XL_WHITE);
     row.getCell(ci).fill = xlFill(XL_BLACK);
     row.getCell(ci).border = xlBorder();
+    row.getCell(ci).alignment = {horizontal:ci===1?'left':'center',vertical:'middle',shrinkToFit:true};
   });
 
   // LEFT: FIX — fixed, always-complete list matching the portal exactly
@@ -3854,30 +3858,33 @@ async function buildSheetT1(wb, name, month, entry){
   const maxRows = Math.max(bsFixedList.length, bezNames.length);
 
   for(let i=0;i<maxRows;i++){
-    const fixedEntry = bsFixedList[i]; // NEW: fixed-list lookup instead of dynamic bsMap entries
+    const fixedEntry = bsFixedList[i];
     const d = fixedEntry ? (bsMap[fixedEntry.n]||{kst:fixedEntry.k||'',an:0,fahr:0,aus:0}) : null;
     const bezName = bezNames[i]||'';
     const bezText = bezName ? (BS_LIST.find(b=>b.n===bezName)?.b||'') : '';
     if(fixedEntry){
       totAn+=d.an;totF+=d.fahr;totAus+=d.aus;
       row = ws.addRow([
-        fixedEntry.n, d.kst||fixedEntry.k||'', '',
+        fixedEntry.n,'','','', d.kst||fixedEntry.k||'',
         parseFloat((d.an||0).toFixed(2)),
         parseFloat((d.fahr||0).toFixed(2)),
         parseFloat(((d.an||0)+(d.fahr||0)).toFixed(2)),
         d.aus?d.aus+'€':'0,00 €',
-        '', bezName, bezText, '', '', '', '', ''
+        bezName,'',bezText,'','',''
       ]);
     } else {
-      row = ws.addRow(['','','','','','','','',bezName,bezText,'','','','','']);
+      row = ws.addRow(['','','','','','','','','',bezName,'',bezText,'','','']);
     }
     row.height = 14;
-    [1,2,4,5,6,7].forEach(ci=>{
+    ws.mergeCells(`A${row.number}:D${row.number}`);
+    ws.mergeCells(`J${row.number}:K${row.number}`);
+    ws.mergeCells(`L${row.number}:O${row.number}`);
+    [1,2,3,4,5,6,7,8,9].forEach(ci=>{
       row.getCell(ci).border = xlBorder();
       row.getCell(ci).font = xlFont(false,9,XL_BLACK);
-      if(ci===2) row.getCell(ci).font = xlFont(true,9,'FF996600');
+      if(ci===5) row.getCell(ci).font = xlFont(true,9,'FF996600');
     });
-    [9,10].forEach(ci=>{
+    [10,11,12,13,14,15].forEach(ci=>{
       row.getCell(ci).border = xlBorder();
       row.getCell(ci).font = xlFont(false,9,XL_BLACK);
       row.getCell(ci).fill = xlFill(XL_GRAY);
@@ -3885,12 +3892,13 @@ async function buildSheetT1(wb, name, month, entry){
   }
 
   // Zuordnung totals
-  row = ws.addRow(['Summe gesamt','','',
+  row = ws.addRow(['Summe gesamt','','','','',
     parseFloat(totAn.toFixed(2)), parseFloat(totF.toFixed(2)), parseFloat((totAn+totF).toFixed(2)),
-    totAus?totAus+'€':'0,00 €','','','','','','','',''
+    totAus?totAus+'€':'0,00 €','','','','','',''
   ]);
   row.height=15;
-  [1,4,5,6,7].forEach(ci=>{
+  ws.mergeCells(`A${row.number}:E${row.number}`);
+  [1,6,7,8,9].forEach(ci=>{
     row.getCell(ci).font=xlFont(true,9,XL_WHITE);
     row.getCell(ci).fill=xlFill(XL_DGRAY);
     row.getCell(ci).border={top:{style:'medium',color:{argb:XL_GOLD}}};
@@ -3916,30 +3924,30 @@ async function buildSheetT1(wb, name, month, entry){
   row.getCell(8).font=xlFont(true,9,XL_BLACK); row.getCell(8).fill=xlFill(XL_GRAY);
   row.height=14;
 
-  row=ws.addRow(['Datum:',polier.datum||'–','','','','','','Datum:',bauleiter.datum||'–','','','','','','']);
-  ws.mergeCells(`B${row.number}:G${row.number}`);
-  ws.mergeCells(`I${row.number}:O${row.number}`);
+  row=ws.addRow(['Datum:','','','',polier.datum||'–','','','Datum:','','',bauleiter.datum||'–','','','','']);
+  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
   row.getCell(8).font=xlFont(true,9,XL_BLACK);
   row.height=14;
 
-  row=ws.addRow(['Name (getippt):',polier.typed||'–','','','','','','Name (getippt):',bauleiter.typed||'–','','','','','','']);
-  ws.mergeCells(`B${row.number}:G${row.number}`);
-  ws.mergeCells(`I${row.number}:O${row.number}`);
-  row.getCell(2).font=xlFont(true,11,XL_BLACK,'Arial');
-  row.getCell(9).font=xlFont(true,11,XL_BLACK,'Arial');
+  row=ws.addRow(['Name (getippt):','','','',polier.typed||'–','','','Name (getippt):','','',bauleiter.typed||'–','','','','']);
+  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
+  row.getCell(1).font=xlFont(true,9,XL_BLACK);
+  row.getCell(8).font=xlFont(true,9,XL_BLACK);
+  row.getCell(5).font=xlFont(true,11,XL_BLACK,'Arial');
+  row.getCell(11).font=xlFont(true,11,XL_BLACK,'Arial');
   row.height=20;
 
-  row=ws.addRow(['Handunterschrift:',
-    polier.drawn&&polier.drawn.length>100?'✓ Digital unterschrieben':'–','','','','','',
-    'Handunterschrift:',
-    bauleiter.drawn&&bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–','','','','','',''
+  row=ws.addRow(['Handunterschrift:','','','',
+    polier.drawn&&polier.drawn.length>100?'✓ Digital unterschrieben':'–','','',
+    'Handunterschrift:','','',
+    bauleiter.drawn&&bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–','','','',''
   ]);
-  ws.mergeCells(`B${row.number}:G${row.number}`);
-  ws.mergeCells(`I${row.number}:O${row.number}`);
+  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
   row.getCell(1).font=xlFont(false,9,XL_BLACK);
   row.getCell(8).font=xlFont(false,9,XL_BLACK);
   row.height=14;
+  ws.pageSetup.printArea=`A$1:O$${row.number}`; // PDF: everything up to the signatures, no Status & Verlauf
 
   ws.addRow([]);
 
@@ -3952,10 +3960,12 @@ async function buildSheetT1(wb, name, month, entry){
 
   const hist=entry?.editHistory||[];
   if(hist.length){
-    row=ws.addRow(['Aktion','Von','Rolle','Datum/Zeit','','','','','','','','','','','']);
+    row=ws.addRow(['Aktion','','','','Von','Rolle','Datum/Zeit','','','','','','','','']);
+    ws.mergeCells(`A${row.number}:D${row.number}`);ws.mergeCells(`G${row.number}:I${row.number}`);
     row.eachCell(cell=>{cell.font=xlFont(true,9,XL_BLACK);cell.fill=xlFill(XL_GRAY);});
     hist.forEach(h=>{
-      row=ws.addRow([h.action||'–',h.by||'–',h.role||'–',h.at||'–']);
+      row=ws.addRow([h.action||'–','','','',h.by||'–',h.role||'–',h.at||'–']);
+      ws.mergeCells(`A${row.number}:D${row.number}`);ws.mergeCells(`G${row.number}:I${row.number}`);
       row.eachCell(cell=>{cell.font=xlFont(false,9,XL_BLACK);cell.border=xlBorder();});
     });
   } else {
@@ -3968,20 +3978,22 @@ async function buildSheetT1(wb, name, month, entry){
       entry?.buchhaltung?.by?['Buchhaltung bestätigt:',entry.buchhaltung.by,entry.buchhaltung.at||'']:null,
     ].filter(Boolean);
     statusRows.forEach(r=>{
-      row=ws.addRow(r);
+      row=ws.addRow([r[0],'','','','',r[1]||'','','',r[2]||'','',r[3]||'']);
+      ws.mergeCells(`A${row.number}:E${row.number}`);ws.mergeCells(`F${row.number}:H${row.number}`);ws.mergeCells(`I${row.number}:J${row.number}`);ws.mergeCells(`K${row.number}:O${row.number}`);
       row.getCell(1).font=xlFont(true,9,XL_BLACK);
       row.getCell(1).fill=xlFill(XL_GRAY);
     });
   }
 
   ws.addRow([]);
-  row=ws.addRow(['Export von:',CU,'am:',now()]);
+  row=ws.addRow(['Export von:','','','',CU,'am:',now()]);
+  ws.mergeCells(`A${row.number}:D${row.number}`);ws.mergeCells(`G${row.number}:I${row.number}`);
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
 }
 
 async function buildSheetT2(wb, name, month, entry){
   const ws = wb.addWorksheet('Monatsabrechnung', {
-    pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0},
+    pageSetup:{paperSize:8, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:1, horizontalCentered:true, margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}},
   });
 
   const td = entry?.tableData || [];
@@ -4009,13 +4021,16 @@ async function buildSheetT2(wb, name, month, entry){
   row.height=22;
 
   // Info row
-  row=ws.addRow(['Name:',name,'Monat:',month,'Personal-Nr:',USERS[name]?.nr||'–','PL:',entry?.pl||USERS[name]?.pl||'–']);
-  row.height=16;
-  [1,3,5,7].forEach(ci=>{row.getCell(ci).font=xlFont(true,9,XL_BLACK);row.getCell(ci).fill=xlFill(XL_GRAY);});
+  const mg=(r,rng)=>ws.mergeCells(`${rng.split(':')[0]}${r.number}:${rng.split(':')[1]}${r.number}`);
+  const lab=(r,cols)=>cols.forEach(ci=>{r.getCell(ci).font=xlFont(true,9,XL_BLACK);r.getCell(ci).fill=xlFill(XL_GRAY);});
+  row=ws.addRow(['Name:',name,'Monat:',month,'','','Personal-Nr:',USERS[name]?.nr||'–']);
+  row.height=16; mg(row,'D:F'); lab(row,[1,3,7]);
 
-  row=ws.addRow(['CC-PL:',entry?.cc||'–','CC bestätigt:',entry?.ccApprovedBy||'–','','','','']);
-  row.height=14;
-  [1,3].forEach(ci=>{row.getCell(ci).font=xlFont(true,9,XL_BLACK);row.getCell(ci).fill=xlFill(XL_GRAY);});
+  row=ws.addRow(['CC-PL:','',entry?.cc||'–','','','PL:',entry?.pl||USERS[name]?.pl||'–','']);
+  row.height=14; mg(row,'A:B'); mg(row,'C:E'); mg(row,'G:H'); lab(row,[1,6]);
+
+  row=ws.addRow(['CC bestätigt:','',entry?.ccApprovedBy||'–','','','','','']);
+  row.height=14; mg(row,'A:B'); mg(row,'C:E'); lab(row,[1]);
 
   ws.addRow([]);
 
@@ -4025,9 +4040,10 @@ async function buildSheetT2(wb, name, month, entry){
   row.eachCell(cell=>{
     cell.font=xlFont(true,9,XL_WHITE);
     cell.fill=xlFill(XL_DGRAY);
-    cell.alignment=xlAlign('center','middle');
+    cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
     cell.border={bottom:{style:'medium',color:{argb:XL_GOLD}}};
   });
+  row.height=28;
 
   // Data rows
   let tVst=0, tSfr=0;
@@ -4096,11 +4112,12 @@ async function buildSheetT2(wb, name, month, entry){
   ws.addRow([]);
 
   // Mini cards
-  row=ws.addRow(['Auslöse versteuert:',tVst+' €','','Gesamt:',(tVst+tSfr).toFixed(2)+' €','','','']);
+  row=ws.addRow(['Auslöse versteuert:','',tVst+' €','','Gesamt:','',(tVst+tSfr).toFixed(2)+' €','']);
+  mg(row,'A:B'); mg(row,'C:D'); mg(row,'E:F'); mg(row,'G:H');
   row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
-  row.getCell(2).font=xlFont(true,11,XL_BLACK);
-  row.getCell(4).font=xlFont(true,9,XL_BLACK);row.getCell(4).fill=xlFill(XL_GRAY);
-  row.getCell(5).font=xlFont(true,11,XL_BLACK);
+  row.getCell(3).font=xlFont(true,11,XL_BLACK);
+  row.getCell(5).font=xlFont(true,9,XL_BLACK);row.getCell(5).fill=xlFill(XL_GRAY);
+  row.getCell(7).font=xlFont(true,11,XL_BLACK);
   row.height=18;
 
   ws.addRow([]);
@@ -4112,7 +4129,8 @@ async function buildSheetT2(wb, name, month, entry){
   row.getCell(1).fill=xlFill(XL_DGRAY);
   row.height=16;
 
-  row=ws.addRow(['Baustelle','KST Nr.','Anteil %','Auslöse €','Kosten BSt. €','','','']);
+  row=ws.addRow(['Baustelle','','KST Nr.','Anteil %','','Auslöse €','Kosten BSt. €','']);
+  mg(row,'A:B'); mg(row,'D:E');
   row.eachCell(cell=>{cell.font=xlFont(true,9,XL_WHITE);cell.fill=xlFill(XL_BLACK);});
   row.height=14;
 
@@ -4134,14 +4152,16 @@ async function buildSheetT2(wb, name, month, entry){
 
   Object.entries(bsMap2).forEach(([bs,d])=>{
     const ant=totalDays>0?((d.days/totalDays)*100):0;
-    row=ws.addRow([bs,d.kst,parseFloat(ant.toFixed(2))+'%',d.aus?d.aus+' €':'',d.aus?d.aus+' €':'','','','']);
+    row=ws.addRow([bs,'',d.kst,parseFloat(ant.toFixed(2))+'%','',d.aus?d.aus+' €':'',d.aus?d.aus+' €':'','']);
+    mg(row,'A:B'); mg(row,'D:E');
     row.eachCell(cell=>{cell.border=xlBorder();cell.font=xlFont(false,9,XL_BLACK);});
-    row.getCell(2).font=xlFont(true,9,'FF996600');
+    row.getCell(3).font=xlFont(true,9,'FF996600');
     row.height=14;
   });
 
   // Total
-  row=ws.addRow(['Summe:','','100,00%',tVst?tVst+' €':'',tVst?tVst+' €':'','','','']);
+  row=ws.addRow(['Summe:','','','100,00%','',tVst?tVst+' €':'',tVst?tVst+' €':'','']);
+  mg(row,'A:B'); mg(row,'D:E');
   row.eachCell(cell=>{cell.font=xlFont(true,9,XL_WHITE);cell.fill=xlFill(XL_DGRAY);cell.border={top:{style:'medium',color:{argb:XL_GOLD}}};});
   row.height=15;
 
@@ -4159,14 +4179,17 @@ async function buildSheetT2(wb, name, month, entry){
 
   [
     ['Unterschrift Polier','','','','Unterschrift Bauleiter','','',''],
-    ['Datum:',polier.datum||'–','','','Datum:',bauleiter.datum||'–','',''],
-    ['Name (getippt):',polier.typed||'–','','','Name (getippt):',bauleiter.typed||'–','',''],
-  ].forEach(r=>{
+    ['Datum:','',polier.datum||'–','','Datum:','',bauleiter.datum||'–',''],
+    ['Name (getippt):','',polier.typed||'–','','Name (getippt):','',bauleiter.typed||'–',''],
+  ].forEach((r,ri)=>{
     row=ws.addRow(r);
+    if(ri===0){mg(row,'A:D');mg(row,'E:H');}
+    else{mg(row,'A:B');mg(row,'C:D');mg(row,'E:F');mg(row,'G:H');}
     row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
     row.getCell(5).font=xlFont(true,9,XL_BLACK);row.getCell(5).fill=xlFill(XL_GRAY);
     row.height=15;
   });
+  ws.pageSetup.printArea=`A$1:H$${row.number}`; // PDF: up to the signatures, without Status & Verlauf
 
   ws.addRow([]);
 
@@ -4180,7 +4203,8 @@ async function buildSheetT2(wb, name, month, entry){
   const hist=entry?.editHistory||[];
   if(hist.length){
     hist.forEach(h=>{
-      row=ws.addRow([h.action||'–',h.by||'–',h.role||'–',h.at||'–','','','','']);
+      row=ws.addRow([h.action||'–','',h.by||'–','','',h.role||'–',h.at||'–','']);
+      mg(row,'A:B'); mg(row,'C:E'); mg(row,'G:H');
       row.eachCell(cell=>{cell.font=xlFont(false,9,XL_BLACK);cell.border=xlBorder();});
     });
   } else {
@@ -4192,13 +4216,15 @@ async function buildSheetT2(wb, name, month, entry){
       entry?.forwarding?.by?['An Buchhaltung:',entry.forwarding.by]:null,
       entry?.buchhaltung?.by?['Buchhaltung bestätigt:',entry.buchhaltung.by]:null,
     ].filter(Boolean).forEach(r=>{
-      row=ws.addRow(r);
+      row=ws.addRow([r[0],'',r[1]||'','','',r[2]||'',r[3]||'','']);
+      mg(row,'A:B'); mg(row,'C:E'); mg(row,'G:H');
       row.getCell(1).font=xlFont(true,9,XL_BLACK);row.getCell(1).fill=xlFill(XL_GRAY);
     });
   }
 
   ws.addRow([]);
-  row=ws.addRow(['Export von:',CU,'am:',now()]);
+  row=ws.addRow(['Export von:','',CU,'','','am:',now(),'']);
+  mg(row,'A:B'); mg(row,'C:E'); mg(row,'G:H');
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
 }
 
@@ -4216,8 +4242,8 @@ async function buildSheetT3(wb, name, month, entry){
   const pl = sigs.pl||{};
 
   ws.columns = [
-    {width:16},  // A: Kostenstelle
-    {width:28},  // B: Kurzbezeichnung
+    {width:26},  // A: Kostenstelle
+    {width:44},  // B: Kurzbezeichnung
     {width:14},  // C: Prozentual
   ];
 
@@ -4226,10 +4252,10 @@ async function buildSheetT3(wb, name, month, entry){
   // Title
   row=ws.addRow(['Anteile für Lohnkosten nach Projektleiter und Kostenstelle']);
   ws.mergeCells('A1:C1');
-  row.getCell(1).font=xlFont(true,13,XL_WHITE);
+  row.getCell(1).font=xlFont(true,12,XL_WHITE);
   row.getCell(1).fill=xlFill(XL_BLACK);
-  row.getCell(1).alignment=xlAlign('center','middle');
-  row.height=22;
+  row.getCell(1).alignment={horizontal:'center',vertical:'middle',wrapText:true};
+  row.height=34;
 
   ws.addRow([]);
 
