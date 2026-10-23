@@ -2258,8 +2258,10 @@ function buildPLDashboard(){
   // Also add CC submissions (people who listed this PL as CC)
   const ccMembers=Object.keys(USERS[CU].ccSubmissions||{});
   ccMembers.forEach(name=>{if(!members.includes(name))members.push(name);});
+  // PL stays on top (No. 0); everyone else sorted A–Z (re-sorted on every open, so new colleagues slot in automatically) and numbered 1,2,3…
+  members.splice(0,members.length,CU,...members.slice(1).sort((x,y)=>x.localeCompare(y,'de',{sensitivity:'base'})));
   // ONE ROW PER PERSON — show latest status summary
-  members.forEach(name=>{
+  members.forEach((name,idx)=>{
     const mu=USERS[name];if(!mu)return;
     const isRealMember=(name===CU)||memberSet.includes(name);
     // CC-only people: restrict to just the submission(s) where this PL is actually CC'd — not their full profile
@@ -2294,7 +2296,7 @@ function buildPLDashboard(){
     const profileLabel=isRealMember?'👁 Profil öffnen':'👁 CC-Abrechnung öffnen';
     tr.innerHTML=`
       <td>
-        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="${profileAction}">${name}</div>
+        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="${profileAction}">${idx}. ${name}</div>
         <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
       </td>
       <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
