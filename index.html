@@ -294,6 +294,7 @@ optgroup{font-weight:700;}
       <label>Mein Projektleiter</label>
       <select id="rpl"><option value="">-- Projektleiter wählen --</option></select>
     </div>
+    <div class="fgroup"><label>Firmen-Code</label><input type="text" id="rcode" placeholder="Code von Sepehr oder Christin" autocomplete="off"></div>
     <div class="err-msg" id="rerr"></div>
     <button class="btn-primary" style="width:100%;padding:9px;margin-top:4px;" onclick="doReg()">KONTO ERSTELLEN →</button>
     <div style="text-align:center;margin-top:10px;">
@@ -1027,10 +1028,16 @@ async function doLogin(){
   const err=document.getElementById('lerr');
   if(typeof db==='undefined'){err.textContent='Verbindung wird aufgebaut... Bitte nochmal klicken.';return;}
   err.textContent='Wird geladen...';
-  // Load all users from Firestore first
+  // The server checks name + password and returns a login token; only then is any data loaded.
+  let res;
+  try{res=await _spomaFn({action:'login',name:n,pw});}catch(e){err.textContent='Verbindungsfehler. Bitte nochmal versuchen.';return;}
+  if(res.error==='notfound'){err.textContent='Benutzer nicht gefunden. Bitte registrieren.';return;}
+  if(res.error==='locked'){err.textContent='Zu viele Fehlversuche. Bitte 10 Minuten warten.';return;}
+  if(res.error==='wrongpw'){err.textContent='Falsches Passwort. Bei Vergessen: Sepehr oder Christin kontaktieren.';return;}
+  if(!res.token){err.textContent='Login fehlgeschlagen. Bitte nochmal versuchen.';return;}
+  AUTH_TOKEN=res.token;
   await loadAllData();
   if(!USERS[n]){err.textContent='Benutzer nicht gefunden. Bitte registrieren.';return;}
-  if(USERS[n].pw!==pw){err.textContent='Falsches Passwort. Bei Vergessen: Sepehr oder Christin kontaktieren.';return;}
   err.textContent='';CU=n;t1ResetEditMarkers();
   if(isAdm(USERS[n]))showAdmin();
   else if(isPL(USERS[n]))showPL();
@@ -1041,9 +1048,10 @@ async function doLogin(){
 // REGISTER
 // ════════════════════════════════════════
 async function initReg(){
-  await loadAllData();
+  let regPls=[];
+  try{const rp=await _spomaFn({action:'pls'});regPls=rp.pls||[];}catch(e){}
   const sel=document.getElementById('rpl');sel.innerHTML='<option value="">-- Projektleiter wählen --</option>';
-  getPLs().forEach(pl=>{const o=document.createElement('option');o.value=pl;o.textContent=pl;sel.appendChild(o);});
+  regPls.forEach(pl=>{const o=document.createElement('option');o.value=pl;o.textContent=pl;sel.appendChild(o);});
   onRoleChange();
 }
 function onRoleChange(){document.getElementById('rpl-wrap').style.display=document.getElementById('rr').value==='pl'?'none':'block';}
@@ -1053,12 +1061,18 @@ async function doReg(){
   const err=document.getElementById('rerr');
   if(!n){err.textContent='Name erforderlich.';return;}
   err.textContent='Wird gespeichert...';
-  // Check if already exists
-  const existing=await fsGetUser(n);
-  if(existing){err.textContent='Bereits registriert.';return;}
+  const code=document.getElementById('rcode').value.trim();
+  if(!code){err.textContent='Bitte den Firmen-Code eingeben.';return;}
   if(r!=='pl'&&!pl){err.textContent='Bitte Projektleiter auswählen.';return;}
   const userData={pw:n,role:r,nr,pl:pl||null,createdAt:now()};
-  await fsSetUser(n,userData);
+  // The server checks the company code, creates the account and returns a login token.
+  let rres;
+  try{rres=await _spomaFn({action:'register',code,name:n,nr,role:r,pl:pl||null,createdAt:userData.createdAt});}catch(e){err.textContent='Verbindungsfehler. Bitte nochmal versuchen.';return;}
+  if(rres.error==='badcode'){err.textContent='Firmen-Code falsch.';return;}
+  if(rres.error==='exists'){err.textContent='Bereits registriert.';return;}
+  if(!rres.token){err.textContent='Registrierung fehlgeschlagen.';return;}
+  AUTH_TOKEN=rres.token;
+  await loadAllData();
   USERS[n]={...userData,status:{},locked:{}};
   if(pl&&USERS[pl]){if(!USERS[pl].members)USERS[pl].members={};USERS[pl].members[n]=true;}
   err.textContent='';CU=n;t1ResetEditMarkers();toast('Willkommen, '+n+'!');
@@ -4372,12 +4386,28 @@ function togglePw(inputId, btn){
 // ═══════════════════════════════════════════════════
 const SUPABASE_URL='https://api.spoma.de';
 const SUPABASE_KEY='sb_publishable_EbuzietqkoVwKWKQN0D7u7_ByahZS4o';
-const _sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const TBL_SUFFIX='';
+const LOGIN_FN='spoma-login';
+let AUTH_TOKEN=null;
+// Every data request carries the login token (issued by the server after a successful login).
+// Without a valid token the database answers nothing.
+const _sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{global:{fetch:async(url,opts)=>{
+  const h=new Headers((opts&&opts.headers)||{});
+  if(AUTH_TOKEN)h.set('Authorization','Bearer '+AUTH_TOKEN);
+  const r=await fetch(url,{...opts,headers:h});
+  if(AUTH_TOKEN&&r.status===401){AUTH_TOKEN=null;try{toast('Sitzung abgelaufen — bitte neu einloggen');}catch(e){};setTimeout(()=>location.reload(),1800);}
+  return r;
+}}});
+async function _spomaFn(body){
+  const r=await fetch(SUPABASE_URL+'/functions/v1/'+LOGIN_FN,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify(body)});
+  return await r.json();
+}
 
 function _docSnap(id,row){
   return{ id, exists:!!row, data:()=>row?row.data:undefined };
 }
-function _collection(name){
+function _collection(nameRaw){
+  const name=nameRaw+TBL_SUFFIX;
   return{
     doc(id){
       return{
@@ -4442,7 +4472,7 @@ async function seedAdmins(){
     catch(e){console.log('seed:',e);}
   }
 }
-seedAdmins();
+// seedAdmins(); — disabled: the database no longer accepts anonymous writes (admins already exist)
 </script>
 </body>
 </html>
