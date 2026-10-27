@@ -2984,7 +2984,8 @@ function buildAdmPLView(){
   if(!plName){content.innerHTML='';return;}
   const pl=USERS[plName];
   // Include PL himself + all his members
-  const members=[plName, ...Object.keys(pl.members||{}).filter(m=>m!==plName)];
+  // PL on top (No. 0), everyone else sorted A–Z and numbered 1,2,3… (same as the PL's own view)
+  const members=[plName, ...Object.keys(pl.members||{}).filter(m=>m!==plName).sort((x,y)=>x.localeCompare(y,'de',{sensitivity:'base'}))];
   let html=`<div class="card gold-left">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div class="section-title" style="margin:0;">${plName} — Mitarbeiter Dashboard</div>
@@ -2994,7 +2995,7 @@ function buildAdmPLView(){
     <table class="dash"><thead><tr>
       <th>Mitarbeiter</th><th>Abrechnungen</th><th>Status</th><th>Aktionen</th>
     </tr></thead><tbody>`;
-  members.forEach(name=>{
+  members.forEach((name,idx)=>{
     const mu=USERS[name];if(!mu)return;
     const allMonths=Object.keys(mu.status||{});
     const totalCount=allMonths.length;
@@ -3008,7 +3009,7 @@ function buildAdmPLView(){
     if(totalCount===0) statusHtml=`<span class="badge b-miss">Nicht eingereicht</span>`;
     html+=`<tr>
       <td>
-        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${name}</div>
+        <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${idx}. ${name}</div>
         <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
       </td>
       <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
@@ -3079,7 +3080,7 @@ async function admRemove(n){
     // Delete all submission records belonging to this person (so they don't reappear if the name is reused)
     const subsSnap=await db.collection('submissions').where('employeeName','==',n).get();
     const delPromises=[];
-    subsSnap.forEach(d=>delPromises.push(d.ref.delete()));
+    subsSnap.forEach(d=>delPromises.push(db.collection('submissions').doc(d.id).delete()));
     await Promise.all(delPromises);
     // Delete from Firestore
     await db.collection('users').doc(n).delete();
