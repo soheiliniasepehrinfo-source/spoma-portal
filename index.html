@@ -617,6 +617,7 @@ optgroup{font-weight:700;}
       <button class="btn-sm btn-danger" onclick="doReject()">✗ Ablehnen</button>
       <button class="btn-sm btn-success" id="pld-confirm-btn" onclick="handleConfirm()">✓ Bestätigen</button>
       <button class="btn-sm btn-primary" id="pld-send-btn" onclick="sendToBuchhaltung()" style="display:none;">📤 An Buchhaltung</button>
+      <button class="btn-sm btn-success" id="pld-bh-btn" onclick="admConfirmForAccounting()" style="display:none;">✓ Buchhaltung bestätigt</button>
     </div>
   </div>
   <div id="pld-content"></div>
@@ -986,6 +987,8 @@ function fmt(n){return n.toFixed(2).replace('.',',');}
 function ini(n){return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
 function isAdm(u){return u&&['admin','admin_pl'].includes(u.role);}
 function isPL(u){return u&&['pl','admin_pl'].includes(u.role);}
+// Buchhaltung = pure role 'admin' (not Admin+PL): the only one who may set the final status 'Buchhaltung bestätigt'
+function isBuchhaltung(u){return !!u&&u.role==='admin';}
 function getPLs(){return Object.keys(USERS).filter(k=>isPL(USERS[k]));}
 function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank';}
 function stL(s){return{
@@ -1570,10 +1573,12 @@ async function submitT1(){
   if(!isEditing&&prevSub1.st&&!(['missing','draft','unlocked'].includes(prevSub1.st)||(prevSub1.st==='rejected'&&USERS[targetName]?.status?.[targetMonth]?.st==='unlocked'))&&!USERS[targetName]?.locked?.[targetMonth]){
     toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt.','err');return;
   }
-  const newSt=isEditing?(prevSub1.st||'submitted'):'submitted';
+  const autoFwd1=!isEditing&&isPL(USERS[CU]); // a PL's own sheet goes straight to Buchhaltung
+  const newSt=isEditing?(prevSub1.st||'submitted'):(autoFwd1?'forwarded':'submitted');
   const newAction=isEditing?'edited':'submitted';
   const prevHist1=prevSub1.editHistory||[];
-  const subData={st:newSt,stamp:isEditing?(prevSub1.stamp||'pending'):'pending',
+  const subData={st:newSt,stamp:isEditing?(prevSub1.stamp||'pending'):(autoFwd1?'forwarded':'pending'),
+    ...(autoFwd1?{forwarding:{forwarded:true,by:CU,at:now(),auto:true}}:{}),
     pl,cc:cc||null,tbl:1,
     submittedAt:prevSub1.submittedAt||now(),
     editedAt:isEditing?now():null,
@@ -1603,7 +1608,7 @@ async function submitT1(){
   }catch(e){toast('Fehler beim Einreichen: '+e.message,'err');return;}
   // Reset editing state
   isEditingForOther=false;editingFor=null;editingMonth=null;
-  if(targetName===CU&&!isEditing){toast('✅ Erfolgreich eingereicht! Tabelle 1 für '+targetMonth+' wurde an '+pl+' gesendet.');}
+  if(targetName===CU&&!isEditing){toast(autoFwd1?'✅ Eingereicht! Tabelle 1 für '+targetMonth+' wurde direkt an die Buchhaltung gesendet.':'✅ Erfolgreich eingereicht! Tabelle 1 für '+targetMonth+' wurde an '+pl+' gesendet.');}
   else{toast('✅ Tabelle 1 für '+targetMonth+' ('+targetName+') gespeichert!');}
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   else openT1();
@@ -1842,10 +1847,12 @@ async function submitT2(){
   if(!isEditing2&&prevSub2.st&&!['missing','draft','unlocked','rejected'].includes(prevSub2.st)&&!USERS[targetName]?.locked?.[targetMonth]){
     toast('🔒 Dieser Monat ist bereits eingereicht/gesperrt.','err');return;
   }
-  const newSt2=isEditing2?(prevSub2.st||'submitted'):'submitted';
+  const autoFwd2=!isEditing2&&isPL(USERS[CU]); // a PL's own sheet goes straight to Buchhaltung
+  const newSt2=isEditing2?(prevSub2.st||'submitted'):(autoFwd2?'forwarded':'submitted');
   const newAction2=isEditing2?'edited':'submitted';
   const prevHist2=prevSub2.editHistory||[];
-  const subData={st:newSt2,stamp:isEditing2?(prevSub2.stamp||'pending'):'pending',
+  const subData={st:newSt2,stamp:isEditing2?(prevSub2.stamp||'pending'):(autoFwd2?'forwarded':'pending'),
+    ...(autoFwd2?{forwarding:{forwarded:true,by:CU,at:now(),auto:true}}:{}),
     pl,cc:cc2||selCC||null,tbl:2,
     submittedAt:prevSub2.submittedAt||now(),
     editedAt:isEditing2?now():null,
@@ -1864,12 +1871,12 @@ async function submitT2(){
     USERS[targetName].status[targetMonth]=subData;
   }catch(e){toast('Fehler beim Einreichen: '+e.message,'err');return;}
   isEditingForOther=false;editingFor=null;editingMonth=null;
-  if(targetName===CU&&!isEditing2){toast('✅ Erfolgreich eingereicht! Tabelle 2 für '+targetMonth+' wurde an '+pl+' gesendet.');}
+  if(targetName===CU&&!isEditing2){toast(autoFwd2?'✅ Eingereicht! Tabelle 2 für '+targetMonth+' wurde direkt an die Buchhaltung gesendet.':'✅ Erfolgreich eingereicht! Tabelle 2 für '+targetMonth+' wurde an '+pl+' gesendet.');}
   else{toast('✅ Tabelle 2 für '+targetMonth+' ('+targetName+') gespeichert!');}
   if(targetName!==CU){await openSubmissionDetail(targetName,targetMonth);}
   else if(!isEditing2){openT2();} // NEW: own submit → reopen read-only with the saved data
-  const sb=document.getElementById('t2-badge');sb.className='badge b-sent';sb.textContent='Eingereicht';
-  document.getElementById('t2-notif').innerHTML=`<div class="notif">✅ Eingereicht für ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
+  const sb=document.getElementById('t2-badge');sb.className='badge '+(autoFwd2?'b-fwd':'b-sent');sb.textContent=autoFwd2?stL('forwarded'):'Eingereicht';
+  document.getElementById('t2-notif').innerHTML=`<div class="notif">${autoFwd2?'📤 An Buchhaltung gesendet für':'✅ Eingereicht für'} ${curMonth}. <span style="cursor:pointer;margin-left:auto;" onclick="this.parentElement.remove()">✕</span></div>`;
 }
 
 function gatherT2Data(){
@@ -2066,7 +2073,7 @@ async function viewT3(name,month,backScreen){
     document.getElementById('t3r-content').innerHTML=buildT3ViewHTML(sub,name,month);
     // Only Admin/Buchhaltung can confirm or reject, and only while still 'submitted'
     if(isAdm(USERS[CU])&&st==='submitted'){
-      document.getElementById('t3r-confirm-btn').style.display='inline-block';
+      document.getElementById('t3r-confirm-btn').style.display=isBuchhaltung(USERS[CU])?'inline-block':'none';
       document.getElementById('t3r-reject-btn').style.display='inline-block';
     }
   }catch(e){
@@ -2113,7 +2120,7 @@ function buildT3ViewHTML(sub,name,month){
   </div>`;
 }
 async function confirmT3(){
-  if(!isAdm(USERS[CU])){toast('Keine Berechtigung.','err');return;}
+  if(!isBuchhaltung(USERS[CU])){toast('Nur die Buchhaltung kann bestätigen.','err');return;}
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     const doc=await db.collection('submissions').doc(docId).get();
@@ -2462,6 +2469,8 @@ async function openSubmissionDetail(name, month, origin){
     if(cBtn) cBtn.style.display=['approved','forwarded','confirmed'].includes(stSub)?'none':'inline-block';
     const sBtn=document.getElementById('pld-send-btn');
     if(sBtn) sBtn.style.display=(stSub==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    const bhBtn=document.getElementById('pld-bh-btn');
+    if(bhBtn) bhBtn.style.display=(stSub==='forwarded'&&isBuchhaltung(USERS[CU]))?'inline-block':'none';
     const eBtn=document.getElementById('pld-edit-btn');
     if(eBtn) eBtn.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   } catch(err){
@@ -2508,6 +2517,8 @@ async function openPLDetail(name,month,e){
     }
     const sendBtnPld=document.getElementById('pld-send-btn');
     if(sendBtnPld) sendBtnPld.style.display=(stPld==='approved'&&(isAdm(USERS[CU])||isPL(USERS[CU])))?'inline-block':'none';
+    const bhBtnPld=document.getElementById('pld-bh-btn');
+    if(bhBtnPld) bhBtnPld.style.display=(stPld==='forwarded'&&isBuchhaltung(USERS[CU]))?'inline-block':'none';
     const editBtnPld=document.getElementById('pld-edit-btn');
     if(editBtnPld) editBtnPld.style.display=(isAdm(USERS[CU])||isPL(USERS[CU]))?'inline-block':'none';
   }catch(err){
@@ -3473,10 +3484,12 @@ function admEditSubmission(){
 
 async function admConfirmForAccounting(){
   if(!curDetail||!curMonth)return;
+  if(!isBuchhaltung(USERS[CU])){toast('Nur die Buchhaltung kann diesen Schritt bestätigen.','err');return;}
   const docId=curDetail.replace(/ /g,'_')+'_'+curMonth.replace(/ /g,'_');
   try{
     // Save confirmed status to Firebase
     const prevData=(await db.collection('submissions').doc(docId).get()).data()||{};
+    if(prevData.st!=='forwarded'){toast('Nur Abrechnungen mit Status "An Buchhaltung gesendet" können bestätigt werden. Aktuell: '+stL(prevData.st||'missing'),'err');return;}
     const upd={
       st:'confirmed',stamp:'confirmed',
       buchhaltung:{confirmed:true,by:CU,at:now()},
