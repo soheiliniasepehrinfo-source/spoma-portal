@@ -236,6 +236,16 @@ table.atbl td{padding:6px 9px;border:1px solid #E8E8E8;vertical-align:middle;col
 .track-log{font-size:10px;color:var(--muted);margin-top:8px;padding:6px 10px;background:var(--gray);border-radius:4px;border-left:2px solid var(--gold);}
 
 optgroup{font-weight:700;}
+/* ── URLAUBSSCHEIN ── */
+table.urt{border-collapse:collapse;font-size:11px;min-width:1250px;width:100%;}
+table.urt th,table.urt td{border:1px solid #999;padding:3px 4px;text-align:center;vertical-align:middle;}
+table.urt th{background:#EDEDED;font-weight:700;font-size:10px;}
+table.urt td input[type=number]{width:60px;text-align:center;padding:3px;}
+table.urt td input[type=date]{width:130px;}
+table.urt .ur-sig{font-size:9px;line-height:1.25;}
+table.urt .ur-sig b{font-size:10px;}
+table.urt td.ur-act button{margin:1px;white-space:nowrap;}
+table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
 </style>
 </head>
 <body>
@@ -336,6 +346,13 @@ optgroup{font-weight:700;}
   </div>
 </div>
 <div class="content">
+  <div class="choice-wrap" style="margin-bottom:12px;">
+    <div class="choice-card" id="card-urlaub" onclick="openUrlaub(CU,new Date().getFullYear(),'choice')">
+      <div class="ctag">Urlaubsschein</div>
+      <div class="ct">Mein Urlaubsschein</div>
+      <div class="cs">Urlaubsanträge, Resttage, Bestätigungen</div>
+    </div>
+  </div>
   <div class="section-title" style="margin-bottom:12px;">Welche Abrechnung ausfüllen?</div>
   <div class="choice-wrap">
     <div class="choice-card" id="card-t1" onclick="selectTable(1)">
@@ -536,6 +553,7 @@ optgroup{font-weight:700;}
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="pl-sub"></div></div></div>
   <div class="topbar-actions">
     <button onclick="showHistory()">📋 Meine Abr.</button>
+    <button onclick="openUrlaub(CU,new Date().getFullYear(),'pl')">🏖 Mein Urlaubsschein</button>
     <button onclick="openCPW('s-pl')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
   </div>
@@ -590,6 +608,10 @@ optgroup{font-weight:700;}
     </div>
   </div>
   <div id="pp-profile-actions" style="margin-bottom:10px;"></div>
+  <div class="card gold-left" id="pp-urlaub-card">
+    <div class="section-title" style="margin-bottom:12px;">Urlaubsschein</div>
+    <div id="pp-urlaub-list"></div>
+  </div>
   <div class="card gold-left">
     <div class="section-title" style="margin-bottom:12px;">Alle Monatsabrechnungen</div>
     <div id="pp-month-list"></div>
@@ -627,6 +649,34 @@ optgroup{font-weight:700;}
 <!-- ════════════════════════════════════════
      HISTORY
 ════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════
+     URLAUBSSCHEIN (independent of the Monatsabrechnungen)
+════════════════════════════════════════ -->
+<div id="s-urlaub" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="ur-sub">Urlaubsschein</div></div></div>
+  <div class="topbar-actions"><button onclick="urBack()">← Zurück</button></div>
+</div>
+<div class="content" style="max-width:1500px;">
+  <div class="card gold-left">
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+      <div><div style="font-size:10px;color:var(--muted);">Name</div><div style="font-weight:800;font-size:15px;" id="ur-name"></div><div style="font-size:11px;color:var(--muted);" id="ur-nr"></div></div>
+      <div><div style="font-size:10px;color:var(--muted);">Planjahr</div><select id="ur-year" onchange="urChangeYear()" style="width:90px;"></select></div>
+      <div><div style="font-size:10px;color:var(--muted);">Gesamturlaub</div>
+        <div style="font-weight:800;font-size:15px;"><span id="ur-total"></span> <button class="btn-sm" id="ur-total-btn" onclick="urEditTotal()" style="display:none;">✎</button></div>
+        <div style="font-size:10px;color:var(--warn-text);" id="ur-total-note"></div></div>
+      <div id="ur-sum" style="margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;"></div>
+    </div>
+  </div>
+  <div class="card" style="padding:8px;overflow-x:auto;">
+    <table class="urt" id="ur-table"></table>
+    <div style="margin-top:8px;"><button class="btn-sm" id="ur-addrow" onclick="urAddRow()">+ Zeile hinzufügen</button></div>
+  </div>
+  <div class="card"><div style="font-weight:700;margin-bottom:4px;">Kommentare</div>
+    <textarea id="ur-comment" rows="3" onchange="urSaveComment()"></textarea></div>
+</div>
+</div>
+
 <div id="s-history" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Meine Abrechnungen</div></div></div>
@@ -648,6 +698,7 @@ optgroup{font-weight:700;}
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="admin-sub"></div></div></div>
   <div class="topbar-actions">
+    <button onclick="openUrlaub(CU,new Date().getFullYear(),'admin')">🏖 Mein Urlaubsschein</button>
     <button onclick="openCPW('s-admin')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
   </div>
@@ -965,6 +1016,220 @@ async function loadPLData(plName){
     if(!USERS[plName].ccSubmissions)USERS[plName].ccSubmissions={};
     if(!USERS[plName].ccSubmissions[name])USERS[plName].ccSubmissions[name]={};
     USERS[plName].ccSubmissions[name][month]=sub;
+  });
+}
+
+// ════════════════════════════════════════
+// URLAUBSSCHEIN — one document per person and year in table 'submissions'
+// id = <Name_>_Urlaub_<Jahr>, kind:'urlaub' (no 'month' field → invisible to all Monatsabrechnung lists)
+// ════════════════════════════════════════
+let UR={name:'',year:0,doc:null,docs:{},back:null,extra:0};
+function urEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function urId(n,y){return n.replace(/ /g,'_')+'_Urlaub_'+y;}
+function urFmt(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getFullYear()).slice(2);}
+function urStamp(by){return {by:by,at:new Date().toISOString()};}
+function urNew(name,year){return {employeeName:name,kind:'urlaub',year:year,pl:(USERS[name]&&USERS[name].pl)||'',total:30,totalLog:[],rows:[],comment:''};}
+// ── rights ──
+function urIsFinal(u){return !!u&&['gf','admin_pl'].includes(u.role);}          // Michael Sack (Geschäftsführer) / Sepehr (Admin+PL); NOT Buchhaltung
+function urIsStaff(doc){                                                          // may do the Projektleiter step
+  const u=USERS[CU];if(!u)return false;
+  if(urIsFinal(u))return true;
+  return u.role==='pl'&&(doc.pl===CU||doc.cc===CU);
+}
+function urCanTotal(){return isAdm(USERS[CU]);}                                   // admin, Frau Frank, Sepehr, Michael
+// ── calculation (automatic) ──
+function urCalc(doc){
+  const total=Number(doc.total==null?30:doc.total);let erh=0,res=0;const out=[];
+  (doc.rows||[]).forEach(r=>{
+    const t=Number(r.tage)||0;
+    const reserve=!!r.ant&&!r.storno&&!r.nicht;
+    const verb=total-erh-res;
+    out.push({erh:erh,verb:verb,t:t,rest:(r.storno||r.nicht)?verb:verb-t});
+    if(reserve){if(r.gen)erh+=t;else res+=t;}
+  });
+  return {rows:out,total:total,erh:erh,res:res,rest:total-erh-res};
+}
+function urN(x){return (Math.round(x*100)/100).toString().replace('.',',');}
+// ── load / save ──
+async function urLoadAll(name){
+  const docs={};
+  try{const snap=await db.collection('submissions').where('employeeName','==',name).get();
+    snap.forEach(d=>{const s=d.data();if(s&&s.kind==='urlaub'&&s.year)docs[s.year]=s;});}
+  catch(e){console.error('urLoadAll:',e);}
+  return docs;
+}
+async function openUrlaub(name,year,origin){
+  if(origin==='choice')UR.back=()=>showChoice();
+  else if(origin==='pl')UR.back=()=>go('s-pl');
+  else if(origin==='admin')UR.back=()=>go('s-admin');
+  else if(origin==='profile')UR.back=()=>openPersonProfile(name,prevProfileScr||'s-admin');
+  UR.name=name;UR.year=Number(year);UR.extra=0;
+  go('s-urlaub');
+  document.getElementById('ur-table').innerHTML='<tr><td style="padding:14px;">⏳ Wird geladen...</td></tr>';
+  UR.docs=await urLoadAll(name);
+  UR.doc=UR.docs[UR.year]||urNew(name,UR.year);
+  urRender();
+}
+function urBack(){if(UR.back)UR.back();else go('s-choice');}
+function urChangeYear(){openUrlaub(UR.name,document.getElementById('ur-year').value);}
+// fresh read → mutate → write → keep local copy
+async function urMutate(fn){
+  let d;
+  try{const s=await db.collection('submissions').doc(urId(UR.name,UR.year)).get();d=s.exists?s.data():urNew(UR.name,UR.year);}
+  catch(e){toast('Fehler beim Laden: '+e.message,'err');return false;}
+  if(!d.rows)d.rows=[];if(!d.totalLog)d.totalLog=[];
+  const ok=fn(d);if(ok===false)return false;
+  d.employeeName=UR.name;d.kind='urlaub';d.year=UR.year;
+  if(USERS[UR.name]&&USERS[UR.name].pl)d.pl=USERS[UR.name].pl;
+  d.updatedAt=new Date().toISOString();d.updatedBy=CU;
+  try{await db.collection('submissions').doc(urId(UR.name,UR.year)).set(d,{merge:true});}
+  catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');return false;}
+  UR.doc=d;UR.docs[UR.year]=d;UR.extra=0;return true;
+}
+// ── rendering ──
+function urCell(s){return s?`<div class="ur-sig"><b>${urEsc(s.by)}</b><br>${urFmt(s.at)}</div>`:'';}
+function urRender(){
+  const doc=UR.doc,name=UR.name,u=USERS[CU],mu=USERS[name]||{};
+  const isOwner=CU===name;
+  document.getElementById('ur-sub').textContent='Urlaubsschein — '+name;
+  document.getElementById('ur-name').textContent=name;
+  document.getElementById('ur-nr').textContent=mu.nr?('Personal-Nr. '+mu.nr):'';
+  // years
+  const cy=new Date().getFullYear();const ys=new Set([cy,cy+1,UR.year]);Object.keys(UR.docs).forEach(y=>ys.add(Number(y)));
+  const sel=document.getElementById('ur-year');sel.innerHTML=[...ys].sort((a,b)=>b-a).map(y=>`<option value="${y}" ${y===UR.year?'selected':''}>${y}</option>`).join('');
+  // total + note
+  const c=urCalc(doc);
+  document.getElementById('ur-total').textContent=urN(c.total)+' Tage';
+  document.getElementById('ur-total-btn').style.display=urCanTotal()?'inline-block':'none';
+  const lg=(doc.totalLog||[]);const last=lg[lg.length-1];
+  document.getElementById('ur-total-note').textContent=last?`${last.from} → ${last.to} Tage, geändert von ${last.by} am ${urFmt(last.at)}`:'';
+  document.getElementById('ur-sum').innerHTML=
+    `<div><div style="font-size:10px;color:var(--muted);">bereits erhalten</div><b>${urN(c.erh)}</b></div>`+
+    `<div><div style="font-size:10px;color:var(--muted);">beantragt (offen)</div><b>${urN(c.res)}</b></div>`+
+    `<div><div style="font-size:10px;color:var(--muted);">Resttage</div><b style="color:var(--ok);">${urN(c.rest)}</b></div>`;
+  document.getElementById('ur-comment').value=doc.comment||'';
+  document.getElementById('ur-comment').disabled=!(isOwner||urIsStaff(doc)||isAdm(u));
+  // table
+  let h=`<tr><th rowspan="2">#</th><th colspan="3">von/am</th><th rowspan="2">-</th><th colspan="3">bis</th><th rowspan="2">Storno</th><th rowspan="2">bereits<br>erhalten</th><th rowspan="2">verbleibende<br>Tage</th><th rowspan="2">beantragte<br>Tage</th><th rowspan="2">Resttage</th><th rowspan="2">Antragsteller</th><th rowspan="2">Projektleiter</th><th rowspan="2">Geschäfts-<br>führung</th><th rowspan="2">Vertretung</th><th rowspan="2">genehmigt</th><th rowspan="2">nicht<br>genehmigt</th><th rowspan="2">Aktion</th></tr><tr><th>Tag</th><th>Monat</th><th>Jahr</th><th>Tag</th><th>Monat</th><th>Jahr</th></tr>`;
+  const n=Math.max(16,(doc.rows||[]).length+UR.extra);
+  for(let i=0;i<n;i++){
+    const r=(doc.rows||[])[i]||null;
+    h+=urRowHtml(i,r,c.rows[i],isOwner);
+  }
+  document.getElementById('ur-table').innerHTML=h;
+  document.getElementById('ur-addrow').style.display=(isOwner||urIsStaff(doc))?'inline-block':'none';
+}
+function urParts(iso){if(!iso)return ['','',''];const p=iso.split('-');return [String(Number(p[2])),String(Number(p[1])),p[0]];}
+function urRowHtml(i,r,cr,isOwner){
+  const doc=UR.doc;
+  const blank=!r;r=r||{};
+  const decided=!!(r.gen||r.nicht);
+  const staff=urIsStaff(doc)&&!isOwner;           // PL / Michael / Sepehr acting for another person
+  const canEdit=!r.storno&&((isOwner&&!r.ant)||(staff&&!decided));
+  const canEditEmpty=blank&&(isOwner||urIsStaff(doc));
+  const ed=canEdit||canEditEmpty;
+  let von,bis;
+  if(ed){
+    von=`<td colspan="3"><input type="date" value="${urEsc(r.von||'')}" onchange="urField(${i},'von',this.value)"></td>`;
+    bis=`<td colspan="3"><input type="date" value="${urEsc(r.bis||'')}" onchange="urField(${i},'bis',this.value)"></td>`;
+  }else{
+    const a=urParts(r.von),b=urParts(r.bis);
+    von=`<td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td>`;bis=`<td>${b[0]}</td><td>${b[1]}</td><td>${b[2]}</td>`;
+  }
+  const t=ed?`<input type="number" min="0" step="0.5" value="${r.tage==null?'':r.tage}" onchange="urField(${i},'tage',this.value)" id="ur-t-${i}">`:(r.tage==null?'':urN(Number(r.tage)));
+  const num=(v)=>blank?'':urN(v);
+  // actions
+  let act='';
+  const me=USERS[CU];
+  if(!blank){
+    if(isOwner&&!r.ant&&!r.storno)act+=`<button class="btn-sm btn-primary" onclick="urConfirm(${i})">Antrag bestätigen</button>`;
+    if(r.ant&&!r.pl&&!r.storno&&!decided&&!isOwner&&urIsStaff(doc))act+=`<button class="btn-sm btn-primary" onclick="urPL(${i})">PL bestätigen</button>`;
+    if(r.ant&&!decided&&!r.storno&&urIsFinal(me)&&!isOwner){
+      act+=`<button class="btn-sm btn-success" onclick="urFinal(${i},true)">Genehmigen</button><button class="btn-sm btn-danger" onclick="urFinal(${i},false)">Ablehnen</button>`;}
+    if(r.ant&&!r.vert&&!r.storno&&urIsFinal(me))act+=`<button class="btn-sm" onclick="urVert(${i})">Vertretung ✓</button>`;
+    if(r.ant&&!r.storno&&((isOwner&&!decided)||(!isOwner&&urIsStaff(doc))))act+=`<button class="btn-sm" onclick="urStorno(${i})">Storno</button>`;
+    if(r.ant&&!r.storno&&!isOwner&&urIsStaff(doc))act+=`<button class="btn-sm" onclick="urUnlock(${i})">Zur Bearbeitung freigeben</button>`;
+  }
+  return `<tr class="${r.storno?'ur-void':''}"><td>${i+1}</td>${von}<td>${(r.von||ed)?'-':''}</td>${bis}`+
+    `<td>${urCell(r.storno)}</td><td>${num(cr?cr.erh:0)}</td><td>${num(cr?cr.verb:0)}</td><td>${t}</td><td>${num(cr?cr.rest:0)}</td>`+
+    `<td>${urCell(r.ant)}</td><td>${urCell(r.pl)}</td><td>${urCell(r.gf)}</td><td>${urCell(r.vert)}</td><td>${urCell(r.gen)}</td><td>${urCell(r.nicht)}</td><td class="ur-act">${act}</td></tr>`;
+}
+// ── actions ──
+function urRow(d,i){while(d.rows.length<=i)d.rows.push({});return d.rows[i];}
+async function urField(i,key,val){
+  const ok=await urMutate(d=>{
+    const r=urRow(d,i);
+    if(r.ant&&CU===UR.name)return false;                                  // owner locked after Antrag
+    if(r.gen||r.nicht||r.storno)return false;
+    r[key]=(key==='tage')?(val===''?'':Number(val)):val;
+    if(CU!==UR.name){r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'edited '+key}]);}
+  });
+  if(ok)urRefreshCalc();else urRender();
+}
+function urRefreshCalc(){urRender();}
+function urAddRow(){UR.extra=1;urRender();}
+async function urConfirm(i){
+  const r0=UR.doc.rows[i]||{};
+  const von=r0.von,bis=r0.bis,t=Number(r0.tage);
+  if(!von||!bis||!(t>0)){toast('Bitte von, bis und beantragte Tage ausfüllen.','err');return;}
+  if(bis<von){toast('„bis“ liegt vor „von“.','err');return;}
+  if(!confirm('Urlaubsantrag verbindlich bestätigen? Danach kannst du ihn nicht mehr ändern.'))return;
+  const mu=USERS[CU]||{};
+  await urMutate(d=>{const r=urRow(d,i);if(r.ant)return false;r.ant=urStamp(CU);
+    if(['pl','admin_pl'].includes(mu.role))r.pl=urStamp(CU);});            // a PL filling his own form is Antragsteller and PL at once
+  urRender();
+}
+async function urPL(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.storno)return false;r.pl=urStamp(CU);});urRender();}
+async function urFinal(i,approve){
+  if(!confirm(approve?'Urlaub genehmigen?':'Urlaub NICHT genehmigen?'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.gen||r.nicht||r.storno)return false;r.gf=urStamp(CU);if(approve)r.gen=urStamp(CU);else r.nicht=urStamp(CU);});
+  urRender();
+}
+async function urVert(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.vert)return false;r.vert=urStamp(CU);});urRender();}
+async function urStorno(i){
+  if(!confirm('Diesen Urlaubsantrag stornieren? Die Tage werden den Resttagen wieder gutgeschrieben.'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno)return false;if(CU===UR.name&&(r.gen||r.nicht))return false;r.storno=urStamp(CU);});
+  urRender();
+}
+async function urUnlock(i){
+  if(!confirm('Antrag zur Bearbeitung freigeben? Bestätigungen werden zurückgesetzt, der Antragsteller kann wieder ändern.'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno)return false;
+    r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'unlocked'}]);
+    delete r.ant;delete r.pl;delete r.vert;delete r.gf;delete r.gen;delete r.nicht;});
+  urRender();
+}
+async function urEditTotal(){
+  if(!urCanTotal())return;
+  const cur=Number(UR.doc.total==null?30:UR.doc.total);
+  const v=prompt('Gesamturlaub '+UR.year+' für '+UR.name+' (Tage):',cur);
+  if(v===null)return;const nv=Number(String(v).replace(',','.'));
+  if(!isFinite(nv)||nv<0||nv>366){toast('Ungültige Zahl.','err');return;}
+  if(nv===cur)return;
+  await urMutate(d=>{const from=Number(d.total==null?30:d.total);d.total=nv;d.totalLog=(d.totalLog||[]).concat([{from:from,to:nv,by:CU,at:new Date().toISOString()}]);});
+  urRender();
+}
+async function urSaveComment(){
+  const v=document.getElementById('ur-comment').value;
+  await urMutate(d=>{d.comment=v;});
+}
+// ── list inside the person profile (PL / Admin / Geschäftsführer) ──
+async function loadUrlaubList(name){
+  const box=document.getElementById('pp-urlaub-list');if(!box)return;
+  box.innerHTML='<div style="color:var(--muted);font-size:12px;">⏳ Wird geladen...</div>';
+  const docs=await urLoadAll(name);
+  const cy=new Date().getFullYear();
+  const years=Object.keys(docs).map(Number);if(!years.includes(cy))years.push(cy);
+  years.sort((a,b)=>b-a);
+  box.innerHTML='';
+  years.forEach(y=>{
+    const d=docs[y]||null;const c=d?urCalc(d):null;
+    const open=d?(d.rows||[]).filter(r=>r.ant&&!r.gen&&!r.nicht&&!r.storno).length:0;
+    const row=document.createElement('div');row.className='person-row clickable';row.style.marginBottom='8px';
+    row.innerHTML=`<div style="flex:1;"><div style="font-weight:700;font-size:13px;">Urlaubsschein ${y}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;">${d?`Gesamt ${urN(c.total)} · erhalten ${urN(c.erh)} · Resttage ${urN(c.rest)}`:'Noch kein Eintrag'}</div></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${open?`<span class="badge b-sent">${open} offen</span>`:''}
+      <button class="btn-sm btn-primary" onclick="openUrlaub('${urEsc(name).replace(/'/g,"\\'")}',${y},'profile')">👁 Öffnen</button></div>`;
+    box.appendChild(row);
   });
 }
 
@@ -2357,6 +2622,7 @@ async function openPersonProfile(name, fromScreen){
   prevProfileScr = fromScreen || 's-pl';
   curDetail = name;
   go('s-person-profile');
+  loadUrlaubList(name);
 
   const mu = USERS[name] || {};
   document.getElementById('pp-sub').textContent = 'Mitarbeiterprofil — ' + name;
