@@ -699,7 +699,7 @@ optgroup{font-weight:700;}
           <select id="au-r">
             <option value="monteur">Monteur</option><option value="azubi">Azubi</option>
             <option value="polier">Polier</option><option value="mitarbeiter">Mitarbeiter</option>
-            <option value="pl">Projektleiter</option><option value="admin">Admin</option>
+            <option value="pl">Projektleiter</option><option value="admin">Admin</option><option value="gf">Geschäftsführer</option>
           </select>
         </div>
         <div style="flex:1;min-width:150px;" class="fgroup"><label>Projektleiter</label><select id="au-pl"><option value="">-- keiner --</option></select></div>
@@ -889,7 +889,7 @@ function currentMonthYear(){
   const now=new Date();
   return MONTHS[now.getMonth()]+' '+now.getFullYear();
 }
-const RL={monteur:'Monteur',azubi:'Azubi',polier:'Polier',bauleiter:'Bauleiter',mitarbeiter:'Mitarbeiter',pl:'Projektleiter',admin:'Admin',admin_pl:'Admin+PL'};
+const RL={monteur:'Monteur',azubi:'Azubi',polier:'Polier',bauleiter:'Bauleiter',mitarbeiter:'Mitarbeiter',pl:'Projektleiter',admin:'Admin',admin_pl:'Admin+PL',gf:'Geschäftsführer'};
 
 const BS_LIST=[
   {n:'Baustelle 1',k:'',b:''},{n:'Baustelle 2',k:'',b:''},{n:'Baustelle 3',k:'',b:''},
@@ -985,12 +985,12 @@ function goBack(){
 }
 function fmt(n){return n.toFixed(2).replace('.',',');}
 function ini(n){return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
-function isAdm(u){return u&&['admin','admin_pl'].includes(u.role);}
+function isAdm(u){return u&&['admin','admin_pl','gf'].includes(u.role);}
 function isPL(u){return u&&['pl','admin_pl'].includes(u.role);}
 // Buchhaltung = pure role 'admin' (not Admin+PL): the only one who may set the final status 'Buchhaltung bestätigt'
 function isBuchhaltung(u){return !!u&&u.role==='admin';}
 function getPLs(){return Object.keys(USERS).filter(k=>isPL(USERS[k]));}
-function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank';}
+function isAdmin(n){return n==='Sepehr Soheilinia'||n==='Christin Frank'||n==='Michael Sack';}
 function stL(s){return{
   missing:'Nicht eingereicht',
   draft:'Entwurf gespeichert',
@@ -2927,7 +2927,7 @@ async function viewMySubmission(month){
 // ════════════════════════════════════════
 async function showAdmin(){
   go('s-admin');
-  document.getElementById('admin-sub').textContent=CU+(USERS[CU].role==='admin_pl'?' · Admin & PL':' · Admin');
+  document.getElementById('admin-sub').textContent=CU+(USERS[CU].role==='admin_pl'?' · Admin & PL':USERS[CU].role==='gf'?' · Geschäftsführer':' · Admin');
   await loadAllData();
   buildAdmStats();buildAdmPLList();buildAdmUsers();buildAdmArch();
   refreshAllPLLists();
@@ -3119,7 +3119,7 @@ async function admAddUser(){
   await fsSetUser(n,userData);
   USERS[n]={...userData,status:{},locked:{}};
   if(pl&&USERS[pl]){if(!USERS[pl].members)USERS[pl].members={};USERS[pl].members[n]=true;}
-  if(['pl','admin_pl','admin'].includes(r)){USERS[n].members={};USERS[n].own={};}
+  if(['pl','admin_pl','admin','gf'].includes(r)){USERS[n].members={};USERS[n].own={};}
   toast('✅ '+n+' erstellt. Passwort = vollständiger Name.');
   document.getElementById('add-usr-form').style.display='none';
   buildAdmUsers();buildAdmStats();buildAdmPLList();refreshAllPLLists();
