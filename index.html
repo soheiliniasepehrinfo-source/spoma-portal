@@ -744,6 +744,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
   </div>
 </div>
 <div class="content">
+  <div id="bh-inbox"></div>
   <div id="ur-inbox-adm"></div>
   <div class="tab-bar">
     <div class="tab active" onclick="swTab('tab-ov',this)">📊 Übersicht</div>
@@ -1355,6 +1356,44 @@ async function loadUrlaubList(name){
   });
 }
 
+
+// ── Inbox für die Buchhaltung: Monatsabrechnungen, die auf ihre Bestätigung warten (reine Ansicht auf den vorhandenen Status, keine eigenen Daten) ──
+let BH_ITEMS=[],BH_TOAST_USER=null;
+function bhItems(){
+  const out=[];
+  Object.keys(USERS).forEach(name=>{
+    const stt=USERS[name].status||{};
+    Object.keys(stt).forEach(month=>{
+      const e=stt[month]||{};const st=e.st||e;
+      const wait=(e.tbl===3)?st==='submitted':st==='forwarded';           // Tabelle 3 geht direkt an die Buchhaltung, Tabelle 1/2 nach PL-Weiterleitung
+      if(wait)out.push({name:name,month:month,tbl:e.tbl||'',by:(e.forwarding&&e.forwarding.by)||(e.tbl===3?'':(USERS[name].pl||'')),at:(e.forwarding&&e.forwarding.at)||e.submittedAt||''});
+    });
+  });
+  out.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
+  return out;
+}
+function bhInboxRender(){
+  const box=document.getElementById('bh-inbox');if(!box)return;
+  const me=USERS[CU];
+  if(!me||!isBuchhaltung(me)){box.innerHTML='';return;}
+  BH_ITEMS=bhItems();
+  if(!BH_ITEMS.length){box.innerHTML='<div style="font-size:12px;color:var(--ok);margin:0 0 10px;">📋 ✓ Keine Monatsabrechnungen zur Bestätigung</div>';return;}
+  let h='<div class="card gold-left"><div class="section-title" style="margin-bottom:10px;">📋 Zur Bestätigung (Buchhaltung) <span class="badge" style="background:var(--err);color:#fff;margin-left:6px;">'+BH_ITEMS.length+'</span></div>';
+  BH_ITEMS.forEach((it,i)=>{
+    h+='<div class="person-row clickable" style="margin-bottom:6px;" onclick="bhOpen('+i+')">'+
+      '<div style="flex:1;"><div style="font-weight:700;">'+urEsc(it.name)+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);">'+urEsc(it.month)+' · Tabelle '+(it.tbl||'?')+(it.by?' · von '+urEsc(it.by):'')+(it.at?' · '+urEsc(it.at):'')+'</div></div>'+
+      '<span class="badge b-fwd">Wartet auf Bestätigung</span>'+
+      '<button class="btn-sm btn-primary" onclick="event.stopPropagation();bhOpen('+i+')">Öffnen</button></div>';
+  });
+  box.innerHTML=h+'</div>';
+  if(BH_TOAST_USER!==CU){BH_TOAST_USER=CU;toast('Du hast '+BH_ITEMS.length+' Monatsabrechnung'+(BH_ITEMS.length===1?'':'en')+' zur Bestätigung.');}
+}
+function bhOpen(i){
+  const it=BH_ITEMS[i];if(!it)return;
+  prevProfileScr='s-admin';
+  openSubmissionDetail(it.name,it.month,'profile');                         // gleiche Ansicht wie aus der PL-Liste (Excel, Bestätigen, ...)
+}
 
 // ── Inbox: open Urlaubsanträge that wait for the logged-in PL / Geschäftsführer ──
 let UR_TOAST_USER=null;
@@ -2906,7 +2945,7 @@ function buildPLDashboard(){
 let pldOrigin='pl'; // where the month report was opened from: 'profile' (person's list) or 'pl' (PL overview, direct)
 function navRefreshLists(target){
   try{
-    if(target==='s-admin'){buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();}
+    if(target==='s-admin'){buildAdmStats();buildAdmPLList();buildAdmPLView();buildAdmArch();bhInboxRender();}
     else{buildPLStats();buildPLDashboard();}
   }catch(e){console.error('navRefreshLists:',e);}
 }
@@ -3519,6 +3558,7 @@ async function showAdmin(){
   buildAdmStats();buildAdmPLList();buildAdmUsers();buildAdmArch();
   refreshAllPLLists();
   urInboxRender('s-admin');
+  bhInboxRender();
 }
 
 function swTab(id,el){
