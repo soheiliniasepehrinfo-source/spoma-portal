@@ -246,6 +246,30 @@ table.urt .ur-sig{font-size:9px;line-height:1.25;}
 table.urt .ur-sig b{font-size:10px;}
 table.urt td.ur-act button{margin:1px;white-space:nowrap;}
 table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
+/* ── URLAUBSPLANER ── */
+.pln-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.pln-wrap{overflow-x:auto;}
+.pln-grid{min-width:900px;}
+.pln-row{display:grid;grid-template-columns:190px 1fr;}
+.pln-mrow{border-bottom:2px solid var(--black);}
+.pln-months{display:flex;}
+.pln-months div{font-size:10px;font-weight:700;text-align:center;padding:4px 0;color:#444;}
+.pln-rows{position:relative;}
+.pln-ov{position:absolute;left:190px;right:0;top:0;bottom:0;pointer-events:none;z-index:1;}
+.pln-ov i{position:absolute;top:0;bottom:0;width:1px;background:#E3E3E3;}
+.pln-today{position:absolute;top:0;bottom:0;width:2px;background:var(--err);opacity:.7;}
+.pln-name{font-size:12px;font-weight:600;padding:8px 6px;border-bottom:1px solid #EFEFEF;display:flex;align-items:center;gap:7px;}
+.pln-name small{font-weight:400;color:var(--muted);font-size:10px;}
+.pln-click{cursor:pointer;} .pln-click:hover{background:#FAF6EA;}
+.pln-dot{width:9px;height:9px;border-radius:50%;flex:none;}
+.pln-track{position:relative;border-bottom:1px solid #EFEFEF;height:36px;}
+.pln-bar{position:absolute;top:9px;height:18px;border-radius:9px;font-size:9.5px;font-weight:700;display:flex;align-items:center;padding:0 6px;overflow:hidden;white-space:nowrap;z-index:2;box-sizing:border-box;}
+.pln-grp{grid-column:1/-1;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:8px 6px 3px;background:#FAFAFA;border-bottom:1px solid #EFEFEF;position:relative;z-index:3;}
+.pln-sum .pln-name{border-bottom:none;}
+.pln-heat{display:grid;gap:1px;padding-top:6px;}
+.pln-heat div{height:16px;font-size:9px;text-align:center;line-height:16px;color:#444;border-radius:2px;}
+.pln-leg{display:flex;gap:16px;margin-top:12px;font-size:11px;color:#555;align-items:center;flex-wrap:wrap;}
+.pln-sw{width:26px;height:10px;border-radius:5px;display:inline-block;vertical-align:middle;margin-right:5px;}
 </style>
 </head>
 <body>
@@ -553,6 +577,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="pl-sub"></div></div></div>
   <div class="topbar-actions">
     <button onclick="showHistory()">📋 Meine Abr.</button>
+    <button onclick="plnOpen('pl')">📅 Urlaubsplaner</button>
     <button onclick="openUrlaub(CU,new Date().getFullYear(),'pl')">🏖 Mein Urlaubsschein</button>
     <button onclick="openCPW('s-pl')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
@@ -678,6 +703,19 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
 </div>
 </div>
 
+<!-- ════════════════════════════════════════
+     URLAUBSPLANER
+════════════════════════════════════════ -->
+<div id="s-planer" class="screen">
+<div class="topbar">
+  <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Urlaubsplaner</div></div></div>
+  <div class="topbar-actions"><button onclick="plnBack()">← Zurück</button></div>
+</div>
+<div class="content" style="max-width:1500px;">
+  <div class="card gold-left" id="pln-body"></div>
+</div>
+</div>
+
 <div id="s-history" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub">Meine Abrechnungen</div></div></div>
@@ -699,6 +737,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="admin-sub"></div></div></div>
   <div class="topbar-actions">
+    <button onclick="plnOpen('admin')">📅 Urlaubsplaner</button>
     <button onclick="openUrlaub(CU,new Date().getFullYear(),'admin')">🏖 Mein Urlaubsschein</button>
     <button onclick="openCPW('s-admin')">🔑</button>
     <button onclick="go('s-login')">Abmelden</button>
@@ -1372,6 +1411,100 @@ function urInboxRender(scr){
   });
   box.innerHTML=h+'</div>';
   if(UR_TOAST_USER!==CU){UR_TOAST_USER=CU;toast('Du hast '+items.length+' offene'+(items.length===1?'n':'')+' Urlaubsantrag'+(items.length===1?'':'e')+'.');}
+}
+
+// ════════════════════════════════════════
+// URLAUBSPLANER — read-only year overview built from the Urlaubsscheine (no data of its own)
+// ════════════════════════════════════════
+let PLN={year:new Date().getFullYear(),mode:'gf',pl:'',back:'s-admin',rows:[],fromGF:false};
+const PLN_COL=['#2563EB','#059669','#D97706','#7C3AED','#DB2777','#0891B2','#DC2626','#65A30D','#9333EA','#EA580C','#0D9488','#4F46E5'];
+const PLN_MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+function plnCanGF(){const u=USERS[CU];return !!u&&(isAdm(u));}                                // Geschäftsführer, Admin+PL, Admin (Frau Frank): overview of all PL + Büro
+function plnCanTeam(){const u=USERS[CU];return !!u&&isPL(u);}                                 // PL / Admin+PL: own team
+async function plnOpen(origin){
+  PLN.back=origin==='admin'?'s-admin':'s-pl';
+  PLN.year=new Date().getFullYear();PLN.fromGF=false;
+  if(plnCanGF()){PLN.mode='gf';}else{PLN.mode='team';PLN.pl=CU;}
+  go('s-planer');
+  document.getElementById('pln-body').innerHTML='<div style="padding:20px;color:var(--muted);">⏳ Wird geladen...</div>';
+  try{if(isAdm(USERS[CU]))await loadAllData();else await loadPLData(CU);}catch(e){console.error(e);}
+  plnRender();
+}
+function plnBack(){go(PLN.back);}
+function plnYear(d){PLN.year+=d;plnRender();}
+function plnMode(m){PLN.mode=m;PLN.fromGF=false;if(m==='team')PLN.pl=CU;plnRender();}
+function plnTeam(i){const r=PLN.rows[i];if(!r||!r.pl)return;PLN.mode='team';PLN.pl=r.name;PLN.fromGF=true;plnRender();}
+function plnColor(name){const all=Object.keys(USERS).sort((a,b)=>a.localeCompare(b,'de',{sensitivity:'base'}));return PLN_COL[Math.max(0,all.indexOf(name))%PLN_COL.length];}
+function plnDay(iso,year){const p=iso.split('-');return Math.round((Date.UTC(+p[0],+p[1]-1,+p[2])-Date.UTC(year,0,1))/86400000);}
+function plnBars(name,year){
+  const dim=(Date.UTC(year+1,0,1)-Date.UTC(year,0,1))/86400000;const out=[];
+  const docs=(USERS[name]&&USERS[name].urlaubDocs)||{};
+  Object.values(docs).forEach(d=>(d.rows||[]).forEach(r=>{
+    if(!r||!r.ant||r.storno||r.nicht||!r.von||!r.bis)return;
+    let a=plnDay(r.von,year),b=plnDay(r.bis,year);
+    if(b<0||a>dim-1)return;
+    const ca=Math.max(0,a),cb=Math.min(dim-1,b);
+    out.push({a:ca,b:cb,dim:dim,von:r.von,bis:r.bis,tage:Number(r.tage)||0,ok:!!r.gen,req:!!r.stornoReq});
+  }));
+  return out;
+}
+function plnRowsGF(){
+  const names=Object.keys(USERS).sort((a,b)=>a.localeCompare(b,'de',{sensitivity:'base'}));
+  const pls=names.filter(n=>isPL(USERS[n])&&n!=='Büro');
+  const buero=names.filter(n=>!pls.includes(n)&&n!=='Büro'&&(USERS[n].pl==='Büro'||['admin','gf'].includes(USERS[n].role)));
+  const rows=pls.map(n=>{const cnt=names.filter(m=>m!==n&&USERS[m].pl===n).length;return {name:n,sub:(RL[USERS[n].role]||'')+' · '+cnt+' Mitarb.',pl:true};});
+  return {pls:rows,buero:buero.map(n=>({name:n,sub:RL[USERS[n].role]||'',pl:false}))};
+}
+function plnRowsTeam(pl){
+  const names=Object.keys(USERS).filter(n=>n!==pl&&USERS[n].pl===pl).sort((a,b)=>a.localeCompare(b,'de',{sensitivity:'base'}));
+  return [pl].concat(names).filter(n=>USERS[n]).map(n=>({name:n,sub:(n===pl?'PL':(RL[USERS[n].role]||'')),pl:false}));
+}
+function plnRender(){
+  const y=PLN.year;const body=document.getElementById('pln-body');
+  const dim=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000;
+  let head='<div class="pln-hd"><button class="btn-sm" onclick="plnYear(-1)">◀</button><b style="font-size:15px;">'+y+'</b><button class="btn-sm" onclick="plnYear(1)">▶</button>';
+  if(plnCanGF()&&plnCanTeam()){
+    head+='<span style="margin-left:14px;display:inline-flex;gap:4px;"><button class="btn-sm '+(PLN.mode==='gf'?'btn-primary':'')+'" onclick="plnMode(\'gf\')">Übersicht PL &amp; Büro</button><button class="btn-sm '+(PLN.mode==='team'&&!PLN.fromGF?'btn-primary':'')+'" onclick="plnMode(\'team\')">Mein Team</button></span>';
+  }
+  if(PLN.mode==='team'&&PLN.fromGF)head+='<button class="btn-sm" style="margin-left:14px;" onclick="plnMode(\'gf\')">← Übersicht</button>';
+  const title=PLN.mode==='gf'?'Projektleiter &amp; Büro':('Team '+urEsc(PLN.pl));
+  head+='<span style="margin-left:auto;font-size:11px;color:var(--muted);">'+title+'</span></div>';
+  // rows
+  let rows=[],groups=[];
+  if(PLN.mode==='gf'){const g=plnRowsGF();rows=g.pls.concat(g.buero);groups=[{at:0,label:'Projektleiter'},{at:g.pls.length,label:'Büro'}];}
+  else rows=plnRowsTeam(PLN.pl);
+  PLN.rows=rows;
+  // month header (proportional to days)
+  let mh='';let acc=0;const mstart=[];
+  for(let m=0;m<12;m++){const d=(Date.UTC(y,m+1,1)-Date.UTC(y,m,1))/86400000;mstart.push(acc);mh+='<div style="width:'+(d/dim*100)+'%">'+PLN_MON[m]+'</div>';acc+=d;}
+  let lines='';mstart.slice(1).forEach(s=>{lines+='<i style="left:'+(s/dim*100)+'%"></i>';});
+  const now=new Date();let today='';if(now.getFullYear()===y){today='<b class="pln-today" style="left:'+(plnDay(now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0'),y)/dim*100)+'%"></b>';}
+  let html='<div class="pln-wrap"><div class="pln-grid"><div class="pln-row pln-mrow"><div class="pln-name"></div><div class="pln-months">'+mh+'</div></div><div class="pln-rows"><div class="pln-ov">'+lines+today+'</div>';
+  const weeks=Math.ceil(dim/7);const heat=new Array(weeks).fill(0);
+  rows.forEach((row,i)=>{
+    if(groups.length){groups.forEach(g=>{if(g.at===i)html+='<div class="pln-grp">'+g.label+'</div>';});}
+    const col=plnColor(row.name);const bars=plnBars(row.name,y);
+    const wk=new Set();
+    let bh='';
+    bars.forEach(b=>{
+      const left=b.a/dim*100,w=(b.b-b.a+1)/dim*100;
+      for(let d=b.a;d<=b.b;d++)wk.add(Math.floor(d/7));
+      const tip=row.name+' · '+urFmt(b.von)+' – '+urFmt(b.bis)+' · '+urN(b.tage)+' Tage · '+(b.ok?'genehmigt':'wartet auf Bestätigung')+(b.req?' · Storno beantragt':'');
+      const st=b.ok?'background:'+col+';color:#fff;':'background-image:repeating-linear-gradient(45deg,'+col+'55 0 4px,'+col+'22 4px 8px);color:#222;border:1px solid '+col+';';
+      bh+='<div class="pln-bar" style="left:'+left+'%;width:'+w+'%;'+st+'" title="'+urEsc(tip)+'">'+(w>3.2?urN(b.tage):'')+'</div>';
+    });
+    wk.forEach(k=>{heat[k]++;});
+    const clk=row.pl?' pln-click" onclick="plnTeam('+i+')':'';
+    html+='<div class="pln-row"><div class="pln-name'+clk+'"><span class="pln-dot" style="background:'+col+'"></span><span><div>'+urEsc(row.name)+'</div><small>'+urEsc(row.sub)+'</small></span></div><div class="pln-track">'+bh+'</div></div>';
+  });
+  if(!rows.length)html+='<div style="padding:14px;color:var(--muted);">Keine Personen.</div>';
+  // heat strip
+  const mx=Math.max(1,...heat);
+  let hs='';heat.forEach((n,k)=>{const dd=new Date(Date.UTC(y,0,1+k*7));const t=n?(0.18+0.82*n/mx):0;hs+='<div style="background:'+(n?'rgba(212,168,67,'+t+')':'#F4F4F4')+'" title="Woche ab '+String(dd.getUTCDate()).padStart(2,'0')+'.'+String(dd.getUTCMonth()+1).padStart(2,'0')+'.: '+n+' Person'+(n===1?'':'en')+' weg">'+(n?n:'')+'</div>';});
+  html+='<div class="pln-row pln-sum"><div class="pln-name"><small><b>Gleichzeitig weg</b><br>Personen pro Woche</small></div><div class="pln-heat" style="grid-template-columns:repeat('+weeks+',1fr)">'+hs+'</div></div>';
+  html+='</div></div></div>';
+  html+='<div class="pln-leg"><span><i class="pln-sw" style="background:#2563EB"></i>genehmigt</span><span><i class="pln-sw" style="background-image:repeating-linear-gradient(45deg,#2563EB55 0 4px,#2563EB22 4px 8px);border:1px solid #2563EB"></i>wartet auf Bestätigung</span>'+(today?'<span style="color:var(--err)">▌ heute</span>':'')+(PLN.mode==='gf'?'<span style="margin-left:auto">Klick auf einen Projektleiter: sein Team</span>':'')+'</div>';
+  body.innerHTML=head+html;
 }
 
 // ── Excel export: the original template (Urlaubschein.xlsx) is filled, one A4 landscape page, sheet protected (password ABCD) ──
