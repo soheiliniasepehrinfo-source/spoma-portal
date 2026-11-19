@@ -655,7 +655,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
 <div id="s-urlaub" class="screen">
 <div class="topbar">
   <div class="topbar-logo"><div class="logo-sq">SP</div><div><h1>SPOMA PORTAL</h1><div class="sub" id="ur-sub">Urlaubsschein</div></div></div>
-  <div class="topbar-actions"><button onclick="urBack()">← Zurück</button></div>
+  <div class="topbar-actions"><button onclick="exportUrlaubExcel(UR.name,UR.year)">⬇ Excel</button><button onclick="urBack()">← Zurück</button></div>
 </div>
 <div class="content" style="max-width:1500px;">
   <div class="card gold-left">
@@ -977,6 +977,7 @@ async function loadAllData(){
   snap.forEach(d=>{
     const sub=d.data();
     const name=sub.employeeName;const month=sub.month;
+    if(sub.kind==='urlaub'&&name&&USERS[name]&&sub.year){if(!USERS[name].urlaubDocs)USERS[name].urlaubDocs={};USERS[name].urlaubDocs[sub.year]=sub;return;}
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
@@ -1000,6 +1001,7 @@ async function loadPLData(plName){
   const snap1=await db.collection('submissions').where('pl','==',plName).get();
   snap1.forEach(d=>{
     const sub=d.data();const name=sub.employeeName;const month=sub.month;
+    if(sub.kind==='urlaub'&&name&&USERS[name]&&sub.year){if(!USERS[name].urlaubDocs)USERS[name].urlaubDocs={};USERS[name].urlaubDocs[sub.year]=sub;return;}
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
@@ -1010,6 +1012,7 @@ async function loadPLData(plName){
   const snap2=await db.collection('submissions').where('cc','==',plName).get();
   snap2.forEach(d=>{
     const sub=d.data();const name=sub.employeeName;const month=sub.month;
+    if(sub.kind==='urlaub'&&name&&USERS[name]&&sub.year){if(!USERS[name].urlaubDocs)USERS[name].urlaubDocs={};USERS[name].urlaubDocs[sub.year]=sub;return;}
     if(!name||!month||!USERS[name])return;
     if(!USERS[name].status)USERS[name].status={};
     USERS[name].status[month]=sub;
@@ -1031,11 +1034,8 @@ function urStamp(by){return {by:by,at:new Date().toISOString()};}
 function urNew(name,year){return {employeeName:name,kind:'urlaub',year:year,pl:(USERS[name]&&USERS[name].pl)||'',total:30,totalLog:[],rows:[],comment:''};}
 // ── rights ──
 function urIsFinal(u){return !!u&&['gf','admin_pl'].includes(u.role);}          // Michael Sack (Geschäftsführer) / Sepehr (Admin+PL); NOT Buchhaltung
-function urIsStaff(doc){                                                          // may do the Projektleiter step
-  const u=USERS[CU];if(!u)return false;
-  if(urIsFinal(u))return true;
-  return u.role==='pl'&&(doc.pl===CU||doc.cc===CU);
-}
+function urIsPL(doc){const u=USERS[CU];return !!u&&isPL(u)&&(doc.pl===CU||doc.cc===CU);}   // the person's own Projektleiter
+function urIsStaff(doc){const u=USERS[CU];return !!u&&(urIsFinal(u)||urIsPL(doc));}          // may act on someone else's form
 function urCanTotal(){return isAdm(USERS[CU]);}                                   // admin, Frau Frank, Sepehr, Michael
 // ── calculation (automatic) ──
 function urCalc(doc){
@@ -1050,6 +1050,21 @@ function urCalc(doc){
   return {rows:out,total:total,erh:erh,res:res,rest:total-erh-res};
 }
 function urN(x){return (Math.round(x*100)/100).toString().replace('.',',');}
+function urStatus(r){
+  if(!r||(!r.von&&!r.bis&&!r.tage&&!r.ant))return null;
+  if(r.storno)return ['Storniert','background:#E5E7EB;color:#374151;'];
+  if(r.nicht)return ['Abgelehnt','background:#FEE2E2;color:#8B1A1A;'];
+  if(r.stornoReq)return ['Storno beantragt','background:#FFEDD5;color:#9A3412;'];
+  if(r.gen)return r.gf?['Genehmigt · GF bestätigt','background:#D1FAE5;color:#2D6A2D;']:['Genehmigt (PL)','background:#D1FAE5;color:#2D6A2D;'];
+  if(r.ant)return r.pl?['Wartet auf Geschäftsführung','background:#FFF8E7;color:#7A4500;']:['Wartet auf PL','background:#FFF8E7;color:#7A4500;'];
+  return ['Entwurf','background:#F0F0F0;color:#555;'];
+}
+function urOpenCount(name){                                                        // rows waiting for the PL (new request or cancel request)
+  const docs=(USERS[name]&&USERS[name].urlaubDocs)||{};let n=0;
+  Object.values(docs).forEach(d=>(d.rows||[]).forEach(r=>{if(r.storno||r.nicht)return;if((r.ant&&!r.pl&&!r.gen)||r.stornoReq)n++;}));
+  return n;
+}
+function urBadge(name){const n=urOpenCount(name);return n?` <span class="badge b-sent" style="margin-left:4px;">🏖 ${n} offen</span>`:'';}
 // ── load / save ──
 async function urLoadAll(name){
   const docs={};
@@ -1084,7 +1099,9 @@ async function urMutate(fn){
   d.updatedAt=new Date().toISOString();d.updatedBy=CU;
   try{await db.collection('submissions').doc(urId(UR.name,UR.year)).set(d,{merge:true});}
   catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');return false;}
-  UR.doc=d;UR.docs[UR.year]=d;UR.extra=0;return true;
+  UR.doc=d;UR.docs[UR.year]=d;UR.extra=0;
+  if(USERS[UR.name]){if(!USERS[UR.name].urlaubDocs)USERS[UR.name].urlaubDocs={};USERS[UR.name].urlaubDocs[UR.year]=d;}
+  return true;
 }
 // ── rendering ──
 function urCell(s){return s?`<div class="ur-sig"><b>${urEsc(s.by)}</b><br>${urFmt(s.at)}</div>`:'';}
@@ -1110,7 +1127,7 @@ function urRender(){
   document.getElementById('ur-comment').value=doc.comment||'';
   document.getElementById('ur-comment').disabled=!(isOwner||urIsStaff(doc)||isAdm(u));
   // table
-  let h=`<tr><th rowspan="2">#</th><th colspan="3">von/am</th><th rowspan="2">-</th><th colspan="3">bis</th><th rowspan="2">Storno</th><th rowspan="2">bereits<br>erhalten</th><th rowspan="2">verbleibende<br>Tage</th><th rowspan="2">beantragte<br>Tage</th><th rowspan="2">Resttage</th><th rowspan="2">Antragsteller</th><th rowspan="2">Projektleiter</th><th rowspan="2">Geschäfts-<br>führung</th><th rowspan="2">Vertretung</th><th rowspan="2">genehmigt</th><th rowspan="2">nicht<br>genehmigt</th><th rowspan="2">Aktion</th></tr><tr><th>Tag</th><th>Monat</th><th>Jahr</th><th>Tag</th><th>Monat</th><th>Jahr</th></tr>`;
+  let h=`<tr><th rowspan="2">#</th><th colspan="3">von/am</th><th rowspan="2">-</th><th colspan="3">bis</th><th rowspan="2">Storno</th><th rowspan="2">bereits<br>erhalten</th><th rowspan="2">verbleibende<br>Tage</th><th rowspan="2">beantragte<br>Tage</th><th rowspan="2">Resttage</th><th rowspan="2">Antragsteller</th><th rowspan="2">Projektleiter</th><th rowspan="2">Geschäfts-<br>führung</th><th rowspan="2">Vertretung</th><th rowspan="2">genehmigt</th><th rowspan="2">nicht<br>genehmigt</th><th rowspan="2">Status</th><th rowspan="2">Aktion</th></tr><tr><th>Tag</th><th>Monat</th><th>Jahr</th><th>Tag</th><th>Monat</th><th>Jahr</th></tr>`;
   const n=Math.max(16,(doc.rows||[]).length+UR.extra);
   for(let i=0;i<n;i++){
     const r=(doc.rows||[])[i]||null;
@@ -1121,11 +1138,12 @@ function urRender(){
 }
 function urParts(iso){if(!iso)return ['','',''];const p=iso.split('-');return [String(Number(p[2])),String(Number(p[1])),p[0]];}
 function urRowHtml(i,r,cr,isOwner){
-  const doc=UR.doc;
+  const doc=UR.doc,me=USERS[CU];
   const blank=!r;r=r||{};
-  const decided=!!(r.gen||r.nicht);
-  const staff=urIsStaff(doc)&&!isOwner;           // PL / Michael / Sepehr acting for another person
-  const canEdit=!r.storno&&((isOwner&&!r.ant)||(staff&&!decided));
+  const fin=urIsFinal(me)&&!isOwner;
+  const pl=urIsPL(doc)&&!isOwner&&!urIsFinal(me);
+  const closed=!!(r.storno||r.nicht);
+  const canEdit=!closed&&!r.stornoReq&&((isOwner&&!r.ant)||fin||(pl&&!r.pl&&!r.gen));
   const canEditEmpty=blank&&(isOwner||urIsStaff(doc));
   const ed=canEdit||canEditEmpty;
   let von,bis;
@@ -1138,21 +1156,32 @@ function urRowHtml(i,r,cr,isOwner){
   }
   const t=ed?`<input type="number" min="0" step="0.5" value="${r.tage==null?'':r.tage}" onchange="urField(${i},'tage',this.value)" id="ur-t-${i}">`:(r.tage==null?'':urN(Number(r.tage)));
   const num=(v)=>blank?'':urN(v);
-  // actions
   let act='';
-  const me=USERS[CU];
-  if(!blank){
-    if(isOwner&&!r.ant&&!r.storno)act+=`<button class="btn-sm btn-primary" onclick="urConfirm(${i})">Antrag bestätigen</button>`;
-    if(r.ant&&!r.pl&&!r.storno&&!decided&&!isOwner&&urIsStaff(doc))act+=`<button class="btn-sm btn-primary" onclick="urPL(${i})">PL bestätigen</button>`;
-    if(r.ant&&!decided&&!r.storno&&urIsFinal(me)&&!isOwner){
-      act+=`<button class="btn-sm btn-success" onclick="urFinal(${i},true)">Genehmigen</button><button class="btn-sm btn-danger" onclick="urFinal(${i},false)">Ablehnen</button>`;}
-    if(r.ant&&!r.vert&&!r.storno&&urIsFinal(me))act+=`<button class="btn-sm" onclick="urVert(${i})">Vertretung ✓</button>`;
-    if(r.ant&&!r.storno&&((isOwner&&!decided)||(!isOwner&&urIsStaff(doc))))act+=`<button class="btn-sm" onclick="urStorno(${i})">Storno</button>`;
-    if(r.ant&&!r.storno&&!isOwner&&urIsStaff(doc))act+=`<button class="btn-sm" onclick="urUnlock(${i})">Zur Bearbeitung freigeben</button>`;
+  const B=(fn,label,cls)=>`<button class="btn-sm ${cls||''}" onclick="${fn}">${label}</button>`;
+  if(!blank&&!r.storno){
+    if(isOwner){
+      if(!r.ant)act+=B(`urConfirm(${i})`,'Bestätigen und an PL senden','btn-primary');
+      else if(!r.nicht&&!r.stornoReq&&!r.gen)act+=B(`urStorno(${i})`,'Zurückziehen');
+      else if(!r.nicht&&!r.stornoReq&&r.gen)act+=B(`urStornoReq(${i})`,'Storno beantragen und an PL senden');
+    }
+    if(r.stornoReq&&(pl||fin))act+=B(`urStornoOk(${i})`,'Storno bestätigen','btn-primary')+B(`urStornoNo(${i})`,'Storno ablehnen');
+    if(pl&&r.ant&&!r.pl&&!r.gen&&!r.nicht&&!r.stornoReq){
+      act+=B(`urPL(${i})`,'PL bestätigen','btn-success')+B(`urReject(${i})`,'Ablehnen','btn-danger')+B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');}
+    if(pl&&r.nicht)act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
+    if(fin&&r.ant){
+      if(!r.gf&&!r.nicht&&!r.stornoReq)act+=B(`urFinal(${i})`,'Bestätigen','btn-success');
+      if(!r.nicht&&!r.stornoReq)act+=B(`urReject(${i})`,'Ablehnen','btn-danger');
+      if(!r.vert&&!r.nicht)act+=B(`urVert(${i})`,'Vertretung ✓');
+      act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
+      if(!r.stornoReq&&!r.nicht)act+=B(`urStorno(${i})`,'Storno');
+    }
   }
+  const stc=(r.storno?urCell(r.storno):(r.stornoReq?`<div class="ur-sig" style="color:#9A3412;">beantragt<br>${urFmt(r.stornoReq.at)}</div>`:''));
+  const st=urStatus(r.ant||r.von||r.bis||r.tage?r:null);
+  const stH=st?`<span class="badge" style="${st[1]}white-space:normal;">${st[0]}</span>`:'';
   return `<tr class="${r.storno?'ur-void':''}"><td>${i+1}</td>${von}<td>${(r.von||ed)?'-':''}</td>${bis}`+
-    `<td>${urCell(r.storno)}</td><td>${num(cr?cr.erh:0)}</td><td>${num(cr?cr.verb:0)}</td><td>${t}</td><td>${num(cr?cr.rest:0)}</td>`+
-    `<td>${urCell(r.ant)}</td><td>${urCell(r.pl)}</td><td>${urCell(r.gf)}</td><td>${urCell(r.vert)}</td><td>${urCell(r.gen)}</td><td>${urCell(r.nicht)}</td><td class="ur-act">${act}</td></tr>`;
+    `<td>${stc}</td><td>${num(cr?cr.erh:0)}</td><td>${num(cr?cr.verb:0)}</td><td>${t}</td><td>${num(cr?cr.rest:0)}</td>`+
+    `<td>${urCell(r.ant)}</td><td>${urCell(r.pl)}</td><td>${urCell(r.gf)}</td><td>${urCell(r.vert)}</td><td>${urCell(r.gen)}</td><td>${urCell(r.nicht)}</td><td>${stH}</td><td class="ur-act">${act}</td></tr>`;
 }
 // ── actions ──
 function urRow(d,i){while(d.rows.length<=i)d.rows.push({});return d.rows[i];}
@@ -1160,7 +1189,8 @@ async function urField(i,key,val){
   const ok=await urMutate(d=>{
     const r=urRow(d,i);
     if(r.ant&&CU===UR.name)return false;                                  // owner locked after Antrag
-    if(r.gen||r.nicht||r.storno)return false;
+    if(r.nicht||r.storno||r.stornoReq)return false;
+    if(CU!==UR.name&&!urIsFinal(USERS[CU])&&(r.pl||r.gen))return false;   // after the PL confirmed, only Geschäftsführer/Admin+PL may edit
     r[key]=(key==='tage')?(val===''?'':Number(val)):val;
     if(CU!==UR.name){r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'edited '+key}]);}
   });
@@ -1179,23 +1209,43 @@ async function urConfirm(i){
     if(['pl','admin_pl'].includes(mu.role))r.pl=urStamp(CU);});            // a PL filling his own form is Antragsteller and PL at once
   urRender();
 }
-async function urPL(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.storno)return false;r.pl=urStamp(CU);});urRender();}
-async function urFinal(i,approve){
-  if(!confirm(approve?'Urlaub genehmigen?':'Urlaub NICHT genehmigen?'))return;
-  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.gen||r.nicht||r.storno)return false;r.gf=urStamp(CU);if(approve)r.gen=urStamp(CU);else r.nicht=urStamp(CU);});
+async function urPL(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.gen||r.nicht||r.storno)return false;r.pl=urStamp(CU);r.gen=urStamp(CU);});urRender();}   // PL confirmation = approved
+async function urReject(i){
+  if(!confirm('Diesen Urlaubsantrag ablehnen?'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.nicht||r.storno)return false;r.nicht=urStamp(CU);
+    if(r.gen){r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'rejected after approval'}]);delete r.gen;}});
+  urRender();
+}
+async function urFinal(i){
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.gf||r.nicht||r.storno)return false;r.gf=urStamp(CU);
+    if(!r.gen)r.gen=urStamp(CU);
+    if(!r.pl&&d.pl===CU)r.pl=urStamp(CU);});
   urRender();
 }
 async function urVert(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.vert)return false;r.vert=urStamp(CU);});urRender();}
+// withdraw (not yet approved) or direct cancel by Geschäftsführer/Admin+PL
 async function urStorno(i){
-  if(!confirm('Diesen Urlaubsantrag stornieren? Die Tage werden den Resttagen wieder gutgeschrieben.'))return;
-  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno)return false;if(CU===UR.name&&(r.gen||r.nicht))return false;r.storno=urStamp(CU);});
+  if(!confirm('Diesen Urlaubsantrag stornieren? Die Tage werden den Resttagen wieder gutgeschrieben. Die Zeile bleibt mit Status "Storniert" stehen.'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno)return false;if(CU===UR.name&&r.gen)return false;r.storno=urStamp(CU);});
   urRender();
 }
+// owner asks for cancelling an approved request → goes to the PL
+async function urStornoReq(i){
+  if(!confirm('Storno beantragen? Der Antrag geht an deinen PL. Nach seiner Bestätigung wird der Urlaub storniert und die Tage kommen zurück.'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno||r.stornoReq)return false;r.stornoReq=urStamp(CU);});
+  urRender();
+}
+async function urStornoOk(i){
+  if(!confirm('Storno bestätigen? Der Urlaub wird storniert und die Tage kommen zurück.'))return;
+  await urMutate(d=>{const r=urRow(d,i);if(!r.stornoReq||r.storno)return false;r.storno=urStamp(CU);});
+  urRender();
+}
+async function urStornoNo(i){await urMutate(d=>{const r=urRow(d,i);if(!r.stornoReq)return false;r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'storno declined'}]);delete r.stornoReq;});urRender();}
 async function urUnlock(i){
   if(!confirm('Antrag zur Bearbeitung freigeben? Bestätigungen werden zurückgesetzt, der Antragsteller kann wieder ändern.'))return;
-  await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.storno)return false;
+  await urMutate(d=>{const r=urRow(d,i);if((!r.ant&&!r.nicht)||r.storno)return false;
     r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'unlocked'}]);
-    delete r.ant;delete r.pl;delete r.vert;delete r.gf;delete r.gen;delete r.nicht;});
+    delete r.ant;delete r.pl;delete r.vert;delete r.gf;delete r.gen;delete r.nicht;delete r.stornoReq;});
   urRender();
 }
 async function urEditTotal(){
@@ -1228,9 +1278,57 @@ async function loadUrlaubList(name){
     row.innerHTML=`<div style="flex:1;"><div style="font-weight:700;font-size:13px;">Urlaubsschein ${y}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:2px;">${d?`Gesamt ${urN(c.total)} · erhalten ${urN(c.erh)} · Resttage ${urN(c.rest)}`:'Noch kein Eintrag'}</div></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">${open?`<span class="badge b-sent">${open} offen</span>`:''}
-      <button class="btn-sm btn-primary" onclick="openUrlaub('${urEsc(name).replace(/'/g,"\\'")}',${y},'profile')">👁 Öffnen</button></div>`;
+      <button class="btn-sm btn-primary" onclick="openUrlaub('${urEsc(name).replace(/'/g,"\\'")}',${y},'profile')">👁 Öffnen</button>${d?`<button class="btn-sm btn-dark" onclick="exportUrlaubExcel('${urEsc(name).replace(/'/g,"\\'")}',${y})">⬇ Excel</button>`:''}</div>`;
     box.appendChild(row);
   });
+}
+
+
+// ── Excel export: the original template (Urlaubschein.xlsx) is filled, one A4 landscape page, sheet protected (password ABCD) ──
+const UR_TPL_B64='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';
+async function exportUrlaubExcel(name,year){
+  try{
+    let doc=(UR.name===name&&UR.year===Number(year)&&UR.doc)?UR.doc:null;
+    if(!doc){const all=await urLoadAll(name);doc=all[year];}
+    if(!doc){toast('Kein Urlaubsschein vorhanden.','err');return;}
+    const bin=atob(UR_TPL_B64);const bytes=new Uint8Array(bin.length);for(let k=0;k<bin.length;k++)bytes[k]=bin.charCodeAt(k);
+    const wb=new ExcelJS.Workbook();await wb.xlsx.load(bytes.buffer);
+    const ws=wb.worksheets[0];
+    const rows=(doc.rows||[]);const c=urCalc(doc);
+    const extra=Math.max(0,rows.length-16);
+    if(extra>0){for(let k=0;k<extra;k++){ws.duplicateRow(21,1,true);}}
+    const mu=USERS[name]||{};
+    ws.getCell('B2').value='Name:  '+name+(mu.nr?'   (Personal-Nr. '+mu.nr+')':'');
+    const lg=(doc.totalLog||[]);const last=lg[lg.length-1];
+    ws.getCell('B3').value='Planjahr:  '+doc.year+'                Gesamturlaub:  '+urN(c.total)
+    ;const stamp=(s)=>s?(s.by+'\n'+urFmt(s.at)):'';
+    const small={size:7,name:ws.getCell('V6').font&&ws.getCell('V6').font.name||'Calibri'};
+    for(let i=0;i<16+extra;i++){
+      const R=6+i;const r=rows[i];
+      ws.getCell('A'+R).value=i+1;
+      [['B','C'],['D','E'],['F','G'],['I','J'],['K','L'],['M','N']].forEach(([x,y])=>{try{ws.mergeCells(x+R+':'+y+R);}catch(e){}});
+      if(!r){continue;}
+      const a=urParts(r.von),b=urParts(r.bis);
+      [['B',a[0]],['D',a[1]],['F',a[2]],['I',b[0]],['K',b[1]],['M',b[2]]].forEach(([col,v])=>{ws.getCell(col+R).value=v===''?null:Number(v);});
+      if(r.von||r.bis)ws.getCell('H'+R).value='-';
+      const cr=c.rows[i];
+      ws.getCell('R'+R).value=cr.erh;ws.getCell('S'+R).value=cr.verb;ws.getCell('T'+R).value=Number(r.tage)||0;ws.getCell('U'+R).value=cr.rest;
+      const put=(col,txt,font)=>{const cell=ws.getCell(col+R);cell.value=txt||null;cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};if(font)cell.font=font;};
+      put('V',stamp(r.ant),small);put('W',stamp(r.pl),small);put('X',stamp(r.gf),small);put('Y',stamp(r.vert),small);
+      put('Q',r.storno?'S':(r.stornoReq?'?':''),{size:8,bold:true});
+      put('Z',r.gen?'✓':'',{size:9,bold:true});put('AA',r.nicht?'✓':'',{size:9,bold:true});
+    }
+    const cr0=25+extra;
+    const cText=(last?'Gesamturlaub geändert: '+urN(last.from)+' → '+urN(last.to)+' Tage, von '+last.by+' am '+urFmt(last.at)+(doc.comment?'\n':''):'')+(doc.comment||'');
+    if(cText){const cm=ws.getCell('A'+(23+extra));cm.value=cText;cm.alignment={wrapText:true,vertical:'top',horizontal:'left'};try{ws.mergeCells('A'+(23+extra)+':AA'+cr0);}catch(e){}}
+    ws.pageSetup={...ws.pageSetup,orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:1,printArea:'A1:AA'+cr0};
+    ws.protect('ABCD',{selectLockedCells:true,selectUnlockedCells:true,formatCells:false,formatColumns:false,formatRows:false,insertColumns:false,insertRows:false,deleteColumns:false,deleteRows:false,sort:false,autoFilter:false});
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);const an=document.createElement('a');
+    an.href=url;an.download='Urlaubsschein_'+name.replace(/ /g,'_')+'_'+doc.year+'.xlsx';document.body.appendChild(an);an.click();document.body.removeChild(an);
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }catch(e){console.error(e);toast('Excel-Fehler: '+e.message,'err');}
 }
 
 // ════════════════════════════════════════
@@ -2569,7 +2667,7 @@ function buildPLDashboard(){
     tr.innerHTML=`
       <td>
         <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="${profileAction}">${idx}. ${name}</div>
-        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
+        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}${urBadge(name)}</div>
       </td>
       <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
       <td>${statusHtml}</td>
@@ -3287,7 +3385,7 @@ function buildAdmPLView(){
     html+=`<tr>
       <td>
         <div class="pname" style="cursor:pointer;color:var(--gold);" onclick="openPersonProfile('${name}','s-admin')">${idx}. ${name}</div>
-        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}</div>
+        <div class="psub">${RL[mu.role]||mu.role}${mu.nr?' · Nr. '+mu.nr:''}${urBadge(name)}</div>
       </td>
       <td style="font-size:11px;color:var(--muted);">${totalCount} Abrechnung${totalCount!==1?'en':''}</td>
       <td>${statusHtml}</td>
