@@ -1033,7 +1033,8 @@ function urFmt(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '
 function urStamp(by){return {by:by,at:new Date().toISOString()};}
 function urNew(name,year){return {employeeName:name,kind:'urlaub',year:year,pl:(USERS[name]&&USERS[name].pl)||'',total:30,totalLog:[],rows:[],comment:''};}
 // ── rights ──
-function urIsFinal(u){return !!u&&['gf','admin_pl'].includes(u.role);}          // Michael Sack (Geschäftsführer) / Sepehr (Admin+PL); NOT Buchhaltung
+function urIsGF(u){return !!u&&u.role==='gf';}                                      // ONLY the Geschäftsführer (Michael Sack, Katja Sporkenbach) gives the Geschäftsführung confirmation
+function urIsFinal(u){return !!u&&['gf','admin_pl'].includes(u.role);}              // may edit / release / reject / cancel / Vertretung / PL step for others          // Michael Sack (Geschäftsführer) / Sepehr (Admin+PL); NOT Buchhaltung
 function urIsPL(doc){const u=USERS[CU];return !!u&&isPL(u)&&(doc.pl===CU||doc.cc===CU);}   // the person's own Projektleiter
 function urIsStaff(doc){const u=USERS[CU];return !!u&&(urIsFinal(u)||urIsPL(doc));}          // may act on someone else's form
 function urCanTotal(){return isAdm(USERS[CU]);}                                   // admin, Frau Frank, Sepehr, Michael
@@ -1141,6 +1142,7 @@ function urRowHtml(i,r,cr,isOwner){
   const doc=UR.doc,me=USERS[CU];
   const blank=!r;r=r||{};
   const fin=urIsFinal(me)&&!isOwner;
+  const gfo=urIsGF(me)&&!isOwner;
   const pl=urIsPL(doc)&&!isOwner&&!urIsFinal(me);
   const closed=!!(r.storno||r.nicht);
   const canEdit=!closed&&!r.stornoReq&&((isOwner&&!r.ant)||fin||(pl&&!r.pl&&!r.gen));
@@ -1165,16 +1167,13 @@ function urRowHtml(i,r,cr,isOwner){
       else if(!r.nicht&&!r.stornoReq&&r.gen)act+=B(`urStornoReq(${i})`,'Storno beantragen und an PL senden');
     }
     if(r.stornoReq&&(pl||fin))act+=B(`urStornoOk(${i})`,'Storno bestätigen','btn-primary')+B(`urStornoNo(${i})`,'Storno ablehnen');
-    if(pl&&r.ant&&!r.pl&&!r.gen&&!r.nicht&&!r.stornoReq){
-      act+=B(`urPL(${i})`,'PL bestätigen','btn-success')+B(`urReject(${i})`,'Ablehnen','btn-danger')+B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');}
-    if(pl&&r.nicht)act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
-    if(fin&&r.ant){
-      if(!r.gf&&!r.nicht&&!r.stornoReq)act+=B(`urFinal(${i})`,'Bestätigen','btn-success');
-      if(!r.nicht&&!r.stornoReq)act+=B(`urReject(${i})`,'Ablehnen','btn-danger');
-      if(!r.vert&&!r.nicht)act+=B(`urVert(${i})`,'Vertretung ✓');
-      act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
-      if(!r.stornoReq&&!r.nicht)act+=B(`urStorno(${i})`,'Storno');
-    }
+    const plStep=(pl||fin)&&r.ant&&!r.pl&&!r.gen&&!r.nicht&&!r.stornoReq;      // waiting for the PL (or Admin+PL / Geschäftsführer acting for an absent PL)
+    if(plStep)act+=B(`urPL(${i})`,'PL bestätigen','btn-success');
+    if(gfo&&r.ant&&!r.gf&&!r.nicht&&!r.stornoReq)act+=B(`urFinal(${i})`,'GF bestätigen','btn-success');   // only the Geschäftsführer
+    if((plStep&&pl)||(fin&&r.ant&&!r.nicht&&!r.stornoReq))act+=B(`urReject(${i})`,'Ablehnen','btn-danger');
+    if(fin&&r.ant&&!r.vert&&!r.nicht)act+=B(`urVert(${i})`,'Vertretung ✓');
+    if((pl&&(plStep||r.nicht))||(fin&&(r.ant||r.nicht)))act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
+    if(fin&&r.ant&&!r.stornoReq&&!r.nicht)act+=B(`urStorno(${i})`,'Storno');
   }
   const stc=(r.storno?urCell(r.storno):(r.stornoReq?`<div class="ur-sig" style="color:#9A3412;">beantragt<br>${urFmt(r.stornoReq.at)}</div>`:''));
   const st=urStatus(r.ant||r.von||r.bis||r.tage?r:null);
@@ -1209,7 +1208,7 @@ async function urConfirm(i){
     if(['pl','admin_pl'].includes(mu.role))r.pl=urStamp(CU);});            // a PL filling his own form is Antragsteller and PL at once
   urRender();
 }
-async function urPL(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.gen||r.nicht||r.storno)return false;r.pl=urStamp(CU);r.gen=urStamp(CU);});urRender();}   // PL confirmation = approved
+async function urPL(i){if(CU===UR.name){return;}await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.gen||r.nicht||r.storno)return false;r.pl=urStamp(CU);r.gen=urStamp(CU);});urRender();}   // PL confirmation = approved
 async function urReject(i){
   if(!confirm('Diesen Urlaubsantrag ablehnen?'))return;
   await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.nicht||r.storno)return false;r.nicht=urStamp(CU);
@@ -1217,9 +1216,9 @@ async function urReject(i){
   urRender();
 }
 async function urFinal(i){
+  if(!urIsGF(USERS[CU])||CU===UR.name){toast('Nur die Geschäftsführung kann das bestätigen.','err');return;}
   await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.gf||r.nicht||r.storno)return false;r.gf=urStamp(CU);
-    if(!r.gen)r.gen=urStamp(CU);
-    if(!r.pl&&d.pl===CU)r.pl=urStamp(CU);});
+    if(!r.gen)r.gen=urStamp(CU);});
   urRender();
 }
 async function urVert(i){await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.vert)return false;r.vert=urStamp(CU);});urRender();}
