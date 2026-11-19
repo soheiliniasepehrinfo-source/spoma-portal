@@ -456,6 +456,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
     <th rowspan="2" style="width:26px;">Url</th>
     <th rowspan="2" style="width:26px;">Krank</th>
     <th rowspan="2" style="width:34px;font-size:9px;">Ausl.</th>
+    <th rowspan="2" style="width:44px;font-size:9px;">steuerfrei Ausl.</th>
     <th rowspan="2" style="width:50px;font-size:9px;">PKW km</th>
   </tr>
   <tr><th style="width:52px;">FZ h</th><th style="width:52px;">Anw h</th><th style="width:52px;">Ges h</th></tr>
@@ -464,7 +465,7 @@ table.urt tr.ur-void td{color:#999;text-decoration:line-through;}
   <tfoot><tr>
     <td colspan="7" style="text-align:right;font-size:10px;font-weight:400;">Summe</td>
     <td id="t1f-fz"></td><td id="t1f-anw"></td><td id="t1f-ges"></td>
-    <td id="t1f-fz50"></td><td id="t1f-url"></td><td id="t1f-kr"></td><td id="t1f-aus"></td><td id="t1f-km"></td>
+    <td id="t1f-fz50"></td><td id="t1f-url"></td><td id="t1f-kr"></td><td id="t1f-aus"></td><td id="t1f-ausfrei"></td><td id="t1f-km"></td>
   </tr></tfoot>
   </table></div>
   <div style="margin-top:14px;" class="section-title">Zuordnung auf den Baustellen</div>
@@ -1155,7 +1156,7 @@ function urRender(){
   document.getElementById('ur-name').textContent=name;
   document.getElementById('ur-nr').textContent=mu.nr?('Personal-Nr. '+mu.nr):'';
   // years
-  const cy=new Date().getFullYear();const ys=new Set([cy,cy+1,UR.year]);Object.keys(UR.docs).forEach(y=>ys.add(Number(y)));
+  const cy=new Date().getFullYear();const ys=new Set([UR.year]);for(let y=cy-1;y<=cy+5;y++)ys.add(y);Object.keys(UR.docs).forEach(y=>ys.add(Number(y)));
   const sel=document.getElementById('ur-year');sel.innerHTML=[...ys].sort((a,b)=>b-a).map(y=>`<option value="${y}" ${y===UR.year?'selected':''}>${y}</option>`).join('');
   // total + note
   const c=urCalc(doc);
@@ -1846,6 +1847,7 @@ function openT1(skipRestore){
       <td class="check"><input type="checkbox" class="url" onchange="t1Recalc()" ${dis}></td>
       <td class="check"><input type="checkbox" class="krank" onchange="t1Recalc()" ${dis}></td>
       <td class="check"><input type="checkbox" class="aus" onchange="t1Recalc()" ${dis}></td>
+      <td class="check"><input type="checkbox" class="ausfrei" onchange="t1Recalc()" ${dis}></td>
       <td class="num"><input type="number" min="0" class="km" onchange="t1Recalc()" ${dis}></td>`;
     tbody.appendChild(tr);
   }
@@ -1933,6 +1935,7 @@ function fillT1WithData(rows,bez){
     const url=tr.querySelector('.url');if(url)url.checked=!!r.url;
     const krank=tr.querySelector('.krank');if(krank)krank.checked=!!r.krank;
     const aus=tr.querySelector('.aus');if(aus)aus.checked=!!r.aus;
+    const ausfrei=tr.querySelector('.ausfrei');if(ausfrei)ausfrei.checked=!!r.ausfrei;
     const km=tr.querySelector('.km');if(km&&r.km)km.value=r.km;
   });
   t1Recalc();
@@ -1960,21 +1963,21 @@ function fillT2WithData(rows){
 }
 
 function t1Recalc(){
-  let tF=0,tA=0,tG=0,tF50=0,tU=0,tK=0,tAus=0,tKm=0;const bsMap={};
+  let tF=0,tA=0,tG=0,tF50=0,tU=0,tK=0,tAus=0,tAF=0,tKm=0;const bsMap={};
   document.querySelectorAll('#t1-tbody tr').forEach(tr=>{
     if(tr.classList.contains('locked')||tr.classList.contains('hidden'))return;
     const d=tr.dataset.day;
     const fahr=parseFloat(tr.querySelector('.fahr')?.value)||0,anwes=parseFloat(tr.querySelector('.anwes')?.value)||0;
     const ges=parseFloat(tr.querySelector('.ges')?.value)||0; // NEW: Ges h is now manual, not auto-filled
     const f50=fahr*0.5,u=tr.querySelector('.url')?.checked?1:0,k=tr.querySelector('.krank')?.checked?1:0;
-    const aus=tr.querySelector('.aus')?.checked?18:0,km=parseFloat(tr.querySelector('.km')?.value)||0;
+    const aus=tr.querySelector('.aus')?.checked?18:0,af=tr.querySelector('.ausfrei')?.checked?1:0,km=parseFloat(tr.querySelector('.km')?.value)||0;
     const bs=tr.querySelector('.bssel')?.value||'',kst=tr.querySelector('.kst')?.value||'';
     if(document.getElementById('t1f50-'+d))document.getElementById('t1f50-'+d).textContent=fahr>0?fmt(f50):'';
-    tF+=fahr;tA+=anwes;tG+=ges;tF50+=f50;tU+=u;tK+=k;tAus+=aus;tKm+=km;
+    tF+=fahr;tA+=anwes;tG+=ges;tF50+=f50;tU+=u;tK+=k;tAus+=aus;tAF+=af;tKm+=km;
     if(bs&&bs!=='Wochenende'){if(!bsMap[bs])bsMap[bs]={kst,an:0,fahr:0,aus:0};bsMap[bs].an+=ges;bsMap[bs].fahr+=f50;bsMap[bs].aus+=aus;if(kst)bsMap[bs].kst=kst;} // NEW: Zuordnung now sources from Ges h and Fahrzeit 50% (not Anwesenheit/full Fahrzeit)
   });
-  const ids=['t1f-fz','t1f-anw','t1f-ges','t1f-fz50','t1f-url','t1f-kr','t1f-aus','t1f-km'];
-  const vals=[tF?fmt(tF):'',tA?fmt(tA):'',tG?fmt(tG):'',tF50?fmt(tF50):'',tU||'',tK||'',tAus?tAus+'€':'',tKm||''];
+  const ids=['t1f-fz','t1f-anw','t1f-ges','t1f-fz50','t1f-url','t1f-kr','t1f-aus','t1f-ausfrei','t1f-km'];
+  const vals=[tF?fmt(tF):'',tA?fmt(tA):'',tG?fmt(tG):'',tF50?fmt(tF50):'',tU||'',tK||'',tAus?tAus+'€':'',tAF||'',tKm||''];
   ids.forEach((id,i)=>{const el=document.getElementById(id);if(el)el.textContent=vals[i];});
   updateT1SumTable(bsMap);
 }
@@ -2284,6 +2287,7 @@ function gatherT1Data(){
       url:tr.querySelector('.url')?.checked,
       krank:tr.querySelector('.krank')?.checked,
       aus:tr.querySelector('.aus')?.checked,
+      ausfrei:tr.querySelector('.ausfrei')?.checked,
       km:tr.querySelector('.km')?.value||''
     });
   });
@@ -3949,7 +3953,7 @@ function buildFullViewHTML(sub){
   }
 
   // ── TABLE 1 ──
-  let tF=0,tA=0,tG=0,tU=0,tK=0,tAus=0,tKm=0;
+  let tF=0,tA=0,tG=0,tU=0,tK=0,tAus=0,tAF=0,tKm=0;
   const bsMap1={};
   // NEW: Ges h is now a manual field. Older MAs saved before this change have no r.ges,
   // so fall back to what it used to auto-show (= Anwesenheit) to keep old data displaying correctly.
@@ -3957,7 +3961,7 @@ function buildFullViewHTML(sub){
   rows.forEach(r=>{
     if(r.locked)return;
     const fahr=parseFloat(r.fahr)||0,anwes=parseFloat(r.anwes)||0;
-    tF+=fahr;tA+=anwes;tG+=gesOf(r);tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tKm+=parseFloat(r.km)||0;
+    tF+=fahr;tA+=anwes;tG+=gesOf(r);tU+=r.url?1:0;tK+=r.krank?1:0;tAus+=r.aus?18:0;tAF+=r.ausfrei?1:0;tKm+=parseFloat(r.km)||0;
     if(r.baustelle&&r.baustelle!=='Wochenende'){
       if(!bsMap1[r.baustelle])bsMap1[r.baustelle]={kst:r.kst||'',an:0,fahr:0,aus:0};
       bsMap1[r.baustelle].an+=gesOf(r); // NEW: Zuordnung sources from Ges h, not Anwesenheit
@@ -3984,6 +3988,7 @@ function buildFullViewHTML(sub){
       <td class="check">${r.url?'✓':''}</td>
       <td class="check">${r.krank?'✓':''}</td>
       <td class="check" style="color:var(--ok);font-weight:700;">${r.aus?'18€':''}</td>
+      <td class="check">${r.ausfrei?'✓':''}</td>
       <td class="num">${r.km||''}</td></tr>`;
   });
 
@@ -4016,6 +4021,7 @@ function buildFullViewHTML(sub){
     <th rowspan="2" style="width:26px;">Url</th>
     <th rowspan="2" style="width:26px;">Krank</th>
     <th rowspan="2" style="width:34px;font-size:9px;">Ausl.</th>
+    <th rowspan="2" style="width:44px;font-size:9px;">steuerfrei Ausl.</th>
     <th rowspan="2" style="width:50px;font-size:9px;">PKW km</th>
   </tr>
   <tr><th>FZ h</th><th>Anw h</th><th>Ges h</th></tr>
@@ -4027,6 +4033,7 @@ function buildFullViewHTML(sub){
     <td>${tF>0?fmt(tF*0.5):''}</td>
     <td>${tU||''}</td><td>${tK||''}</td>
     <td>${tAus?tAus+'€':''}</td>
+    <td>${tAF||''}</td>
     <td>${tKm||''}</td>
   </tr></tfoot>
   </table></div>
@@ -4340,14 +4347,15 @@ async function buildSheetT1(wb, name, month, entry){
     {width:6},   // L: URL
     {width:6},   // M: Krank
     {width:8},   // N: Ausl.
-    {width:8},   // O: PKW km
+    {width:9},   // O: steuerfrei Ausl.
+    {width:8},   // P: PKW km
   ];
 
   let row;
 
   // ── ROW 1: Title ──
   row = ws.addRow(['SPOMA Parkett und Ausbau GmbH — Monatsabrechnung Tabelle 1']);
-  ws.mergeCells(`A1:O1`);
+  ws.mergeCells(`A1:P1`);
   row.getCell(1).font = xlFont(true, 13, XL_WHITE);
   row.getCell(1).fill = xlFill(XL_BLACK);
   row.getCell(1).alignment = xlAlign('center','middle');
@@ -4383,17 +4391,17 @@ async function buildSheetT1(wb, name, month, entry){
   ws.addRow([]);
 
   // ── ROW 5+6: Headers ──
-  row = ws.addRow(['Tag','OST','WEST','BLN','Baustelle','KST','Beginn/Ende','FZ h','Anw h','Ges h','FZ 50%','URL','Krank','Ausl.','PKW km']);
-  row.height = 18;
+  row = ws.addRow(['Tag','OST','WEST','BLN','Baustelle','KST','Beginn/Ende','FZ h','Anw h','Ges h','FZ 50%','URL','Krank','Ausl.','steuerfrei Ausl.','PKW km']);
+  row.height = 24;
   row.eachCell(cell=>{
     cell.font = xlFont(true,9,XL_WHITE);
     cell.fill = xlFill(XL_DGRAY);
-    cell.alignment = xlAlign('center','middle');
+    cell.alignment = {horizontal:'center',vertical:'middle',wrapText:true};
     cell.border = {bottom:{style:'medium',color:{argb:XL_GOLD}}};
   });
 
   // ── DATA ROWS ──
-  let sumFZ=0, sumAnw=0, sumGes=0, sumURL=0, sumKrank=0, sumAus=0, sumKm=0;
+  let sumFZ=0, sumAnw=0, sumGes=0, sumURL=0, sumKrank=0, sumAus=0, sumAF=0, sumKm=0;
 
   td.forEach(r=>{
     const isWE = r.locked && (r.baustelle==='Wochenende'||r.baustelle==='');
@@ -4410,7 +4418,7 @@ async function buildSheetT1(wb, name, month, entry){
     if(!isWE){
       sumFZ+=fahr; sumAnw+=anwes; sumGes+=ges;
       sumURL+=r.url?1:0; sumKrank+=r.krank?1:0;
-      sumAus+=r.aus?18:0; sumKm+=parseFloat(r.km)||0;
+      sumAus+=r.aus?18:0; sumAF+=r.ausfrei?1:0; sumKm+=parseFloat(r.km)||0;
     }
 
     const rowData = [
@@ -4422,7 +4430,7 @@ async function buildSheetT1(wb, name, month, entry){
       fahr||'', anwes||'', ges||'',
       f50||'',
       r.url?'✓':'', r.krank?'✓':'',
-      r.aus?'18€':'', r.km||''
+      r.aus?'18€':'', r.ausfrei?'✓':'', r.km||''
     ];
 
     row = ws.addRow(rowData);
@@ -4470,7 +4478,7 @@ async function buildSheetT1(wb, name, month, entry){
     sumFZ||'', sumAnw||'', sumGes||'',
     sumFZ>0?parseFloat((sumFZ*0.5).toFixed(2)):'',
     sumURL||'', sumKrank||'',
-    sumAus?sumAus+'€':'', sumKm||''
+    sumAus?sumAus+'€':'', sumAF||'', sumKm||''
   ]);
   row.height = 16;
   row.eachCell(cell=>{
@@ -4502,7 +4510,7 @@ async function buildSheetT1(wb, name, month, entry){
   row.height = 16;
   ws.mergeCells(`A${row.number}:I${row.number}`);
   ws.mergeCells(`J${row.number}:K${row.number}`);
-  ws.mergeCells(`L${row.number}:O${row.number}`);
+  ws.mergeCells(`L${row.number}:P${row.number}`);
   [1,10,12].forEach(ci=>{ row.getCell(ci).font = xlFont(true,9,XL_WHITE); row.getCell(ci).fill = xlFill(XL_DGRAY); });
 
   // Zuordnung sub-header
@@ -4549,7 +4557,7 @@ async function buildSheetT1(wb, name, month, entry){
     row.height = 14;
     ws.mergeCells(`A${row.number}:D${row.number}`);
     ws.mergeCells(`J${row.number}:K${row.number}`);
-    ws.mergeCells(`L${row.number}:O${row.number}`);
+    ws.mergeCells(`L${row.number}:P${row.number}`);
     [1,2,3,4,5,6,7,8,9].forEach(ci=>{
       row.getCell(ci).border = xlBorder();
       row.getCell(ci).font = xlFont(false,9,XL_BLACK);
@@ -4580,7 +4588,7 @@ async function buildSheetT1(wb, name, month, entry){
 
   // ── UNTERSCHRIFTEN ──
   row = ws.addRow(['UNTERSCHRIFTEN & DATUM','','','','','','','','','','','','','','']);
-  ws.mergeCells(`A${row.number}:O${row.number}`);
+  ws.mergeCells(`A${row.number}:P${row.number}`);
   row.getCell(1).font = xlFont(true,10,XL_WHITE);
   row.getCell(1).fill = xlFill(XL_DGRAY);
   row.height = 16;
@@ -4590,19 +4598,19 @@ async function buildSheetT1(wb, name, month, entry){
 
   row = ws.addRow(['Unterschrift Polier','','','','','','','Unterschrift Bauleiter','','','','','','','']);
   ws.mergeCells(`A${row.number}:G${row.number}`);
-  ws.mergeCells(`H${row.number}:O${row.number}`);
+  ws.mergeCells(`H${row.number}:P${row.number}`);
   row.getCell(1).font=xlFont(true,9,XL_BLACK); row.getCell(1).fill=xlFill(XL_GRAY);
   row.getCell(8).font=xlFont(true,9,XL_BLACK); row.getCell(8).fill=xlFill(XL_GRAY);
   row.height=14;
 
   row=ws.addRow(['Datum:','','','',polier.datum||'–','','','Datum:','','',bauleiter.datum||'–','','','','']);
-  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
+  ['A:D','E:G','H:J','K:P'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
   row.getCell(8).font=xlFont(true,9,XL_BLACK);
   row.height=14;
 
   row=ws.addRow(['Name (getippt):','','','',polier.typed||'–','','','Name (getippt):','','',bauleiter.typed||'–','','','','']);
-  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
+  ['A:D','E:G','H:J','K:P'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
   row.getCell(1).font=xlFont(true,9,XL_BLACK);
   row.getCell(8).font=xlFont(true,9,XL_BLACK);
   row.getCell(5).font=xlFont(true,11,XL_BLACK,'Arial');
@@ -4614,17 +4622,17 @@ async function buildSheetT1(wb, name, month, entry){
     'Handunterschrift:','','',
     bauleiter.drawn&&bauleiter.drawn.length>100?'✓ Digital unterschrieben':'–','','','',''
   ]);
-  ['A:D','E:G','H:J','K:O'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
+  ['A:D','E:G','H:J','K:P'].forEach(m=>{const[x,y]=m.split(':');ws.mergeCells(`${x}${row.number}:${y}${row.number}`);});
   row.getCell(1).font=xlFont(false,9,XL_BLACK);
   row.getCell(8).font=xlFont(false,9,XL_BLACK);
   row.height=14;
-  ws.pageSetup.printArea=`A$1:O$${row.number}`; // PDF: everything up to the signatures, no Status & Verlauf
+  ws.pageSetup.printArea=`A$1:P$${row.number}`; // PDF: everything up to the signatures, no Status & Verlauf
 
   ws.addRow([]);
 
   // ── STATUS & VERLAUF ──
   row=ws.addRow(['STATUS & VERLAUF','','','','','','','','','','','','','','']);
-  ws.mergeCells(`A${row.number}:O${row.number}`);
+  ws.mergeCells(`A${row.number}:P${row.number}`);
   row.getCell(1).font=xlFont(true,10,XL_WHITE);
   row.getCell(1).fill=xlFill(XL_DGRAY);
   row.height=16;
