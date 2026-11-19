@@ -1026,7 +1026,7 @@ async function loadPLData(plName){
 // URLAUBSSCHEIN — one document per person and year in table 'submissions'
 // id = <Name_>_Urlaub_<Jahr>, kind:'urlaub' (no 'month' field → invisible to all Monatsabrechnung lists)
 // ════════════════════════════════════════
-let UR={name:'',year:0,doc:null,docs:{},back:null,extra:0};
+let UR={name:'',year:0,doc:null,docs:{},back:null,extra:0,editRow:null};
 function urEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function urId(n,y){return n.replace(/ /g,'_')+'_Urlaub_'+y;}
 function urFmt(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getFullYear()).slice(2);}
@@ -1079,7 +1079,7 @@ async function openUrlaub(name,year,origin){
   else if(origin==='pl')UR.back=()=>go('s-pl');
   else if(origin==='admin')UR.back=()=>go('s-admin');
   else if(origin==='profile')UR.back=()=>openPersonProfile(name,prevProfileScr||'s-admin');
-  UR.name=name;UR.year=Number(year);UR.extra=0;
+  UR.name=name;UR.year=Number(year);UR.extra=0;UR.editRow=null;
   go('s-urlaub');
   document.getElementById('ur-table').innerHTML='<tr><td style="padding:14px;">⏳ Wird geladen...</td></tr>';
   UR.docs=await urLoadAll(name);
@@ -1100,7 +1100,7 @@ async function urMutate(fn){
   d.updatedAt=new Date().toISOString();d.updatedBy=CU;
   try{await db.collection('submissions').doc(urId(UR.name,UR.year)).set(d,{merge:true});}
   catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');return false;}
-  UR.doc=d;UR.docs[UR.year]=d;UR.extra=0;
+  UR.doc=d;UR.docs[UR.year]=d;UR.extra=0;UR.editRow=null;
   if(USERS[UR.name]){if(!USERS[UR.name].urlaubDocs)USERS[UR.name].urlaubDocs={};USERS[UR.name].urlaubDocs[UR.year]=d;}
   return true;
 }
@@ -1145,18 +1145,20 @@ function urRowHtml(i,r,cr,isOwner){
   const gfo=urIsGF(me)&&!isOwner;
   const pl=urIsPL(doc)&&!isOwner&&!urIsFinal(me);
   const closed=!!(r.storno||r.nicht);
-  const canEdit=!closed&&!r.stornoReq&&((isOwner&&!r.ant)||fin||(pl&&!r.pl&&!r.gen));
+  const editing=UR.editRow===i&&r.ant&&!closed&&!r.stornoReq&&!r.gf&&(fin||(pl&&!r.pl&&!r.gen));   // explicit "Bearbeiten" mode
+  const canEdit=!closed&&!r.stornoReq&&isOwner&&!r.ant;
   const canEditEmpty=blank&&(isOwner||urIsStaff(doc));
-  const ed=canEdit||canEditEmpty;
+  const ed=canEdit||canEditEmpty||editing;
+  const eid=editing?'ev':'';
   let von,bis;
   if(ed){
-    von=`<td colspan="3"><input type="date" value="${urEsc(r.von||'')}" onchange="urField(${i},'von',this.value)"></td>`;
-    bis=`<td colspan="3"><input type="date" value="${urEsc(r.bis||'')}" onchange="urField(${i},'bis',this.value)"></td>`;
+    von=`<td colspan="3"><input type="date" id="ur-ev-${i}" value="${urEsc(r.von||'')}" ${editing?'':`onchange="urField(${i},'von',this.value)"`}></td>`;
+    bis=`<td colspan="3"><input type="date" id="ur-eb-${i}" value="${urEsc(r.bis||'')}" ${editing?'':`onchange="urField(${i},'bis',this.value)"`}></td>`;
   }else{
     const a=urParts(r.von),b=urParts(r.bis);
     von=`<td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td>`;bis=`<td>${b[0]}</td><td>${b[1]}</td><td>${b[2]}</td>`;
   }
-  const t=ed?`<input type="number" min="0" step="0.5" value="${r.tage==null?'':r.tage}" onchange="urField(${i},'tage',this.value)" id="ur-t-${i}">`:(r.tage==null?'':urN(Number(r.tage)));
+  const t=ed?`<input type="number" min="0" step="0.5" value="${r.tage==null?'':r.tage}" ${editing?'':`onchange="urField(${i},'tage',this.value)"`} id="ur-t-${i}">`:(r.tage==null?'':urN(Number(r.tage)));
   const num=(v)=>blank?'':urN(v);
   let act='';
   const B=(fn,label,cls)=>`<button class="btn-sm ${cls||''}" onclick="${fn}">${label}</button>`;
@@ -1166,14 +1168,19 @@ function urRowHtml(i,r,cr,isOwner){
       else if(!r.nicht&&!r.stornoReq&&!r.gen)act+=B(`urStorno(${i})`,'Zurückziehen');
       else if(!r.nicht&&!r.stornoReq&&r.gen)act+=B(`urStornoReq(${i})`,'Storno beantragen und an PL senden');
     }
+    if(editing){act+=B(`urSaveEdit(${i})`,'Speichern','btn-primary')+B(`urCancelEdit()`,'Abbrechen');}
+    else{
     if(r.stornoReq&&(pl||fin))act+=B(`urStornoOk(${i})`,'Storno bestätigen','btn-primary')+B(`urStornoNo(${i})`,'Storno ablehnen');
     const plStep=(pl||fin)&&r.ant&&!r.pl&&!r.gen&&!r.nicht&&!r.stornoReq;      // waiting for the PL (or Admin+PL / Geschäftsführer acting for an absent PL)
+    const open=r.ant&&!r.gf&&!r.nicht&&!r.stornoReq;                           // not yet confirmed by the Geschäftsführung → still changeable
     if(plStep)act+=B(`urPL(${i})`,'PL bestätigen','btn-success');
-    if(gfo&&r.ant&&!r.gf&&!r.nicht&&!r.stornoReq)act+=B(`urFinal(${i})`,'GF bestätigen','btn-success');   // only the Geschäftsführer
-    if((plStep&&pl)||(fin&&r.ant&&!r.nicht&&!r.stornoReq))act+=B(`urReject(${i})`,'Ablehnen','btn-danger');
+    if(gfo&&open)act+=B(`urFinal(${i})`,'GF bestätigen','btn-success');       // only the Geschäftsführer
+    if(open&&((pl&&plStep)||fin))act+=B(`urEditStart(${i})`,'Bearbeiten');
+    if(open&&((pl&&plStep)||fin))act+=B(`urReject(${i})`,'Ablehnen','btn-danger');
     if(fin&&r.ant&&!r.vert&&!r.nicht)act+=B(`urVert(${i})`,'Vertretung ✓');
-    if((pl&&(plStep||r.nicht))||(fin&&(r.ant||r.nicht)))act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
+    if((pl&&(plStep||r.nicht))||(fin&&(open||r.nicht)))act+=B(`urUnlock(${i})`,'Zur Bearbeitung freigeben');
     if(fin&&r.ant&&!r.stornoReq&&!r.nicht)act+=B(`urStorno(${i})`,'Storno');
+    }
   }
   const stc=(r.storno?urCell(r.storno):(r.stornoReq?`<div class="ur-sig" style="color:#9A3412;">beantragt<br>${urFmt(r.stornoReq.at)}</div>`:''));
   const st=urStatus(r.ant||r.von||r.bis||r.tage?r:null);
@@ -1187,9 +1194,8 @@ function urRow(d,i){while(d.rows.length<=i)d.rows.push({});return d.rows[i];}
 async function urField(i,key,val){
   const ok=await urMutate(d=>{
     const r=urRow(d,i);
-    if(r.ant&&CU===UR.name)return false;                                  // owner locked after Antrag
+    if(r.ant)return false;                                                // a sent request is locked for everybody (changes only via "Bearbeiten" or release)
     if(r.nicht||r.storno||r.stornoReq)return false;
-    if(CU!==UR.name&&!urIsFinal(USERS[CU])&&(r.pl||r.gen))return false;   // after the PL confirmed, only Geschäftsführer/Admin+PL may edit
     r[key]=(key==='tage')?(val===''?'':Number(val)):val;
     if(CU!==UR.name){r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'edited '+key}]);}
   });
@@ -1207,6 +1213,32 @@ async function urConfirm(i){
   await urMutate(d=>{const r=urRow(d,i);if(r.ant)return false;r.ant=urStamp(CU);
     if(['pl','admin_pl'].includes(mu.role))r.pl=urStamp(CU);});            // a PL filling his own form is Antragsteller and PL at once
   urRender();
+}
+function urEditStart(i){UR.editRow=i;urRender();}
+function urCancelEdit(){UR.editRow=null;urRender();}
+// explicit edit of a sent request (PL before his confirmation; Geschäftsführer/Admin+PL until the Geschäftsführung confirmed). Confirmations are reset → back to "Wartet auf PL".
+async function urSaveEdit(i){
+  const eV=document.getElementById('ur-ev-'+i),eB=document.getElementById('ur-eb-'+i),eT=document.getElementById('ur-t-'+i);
+  if(!eV||!eB||!eT)return;
+  const von=eV.value,bis=eB.value,t=Number(eT.value);
+  if(!von||!bis||!(t>0)){toast('Bitte von, bis und beantragte Tage ausfüllen.','err');return;}
+  if(bis<von){toast('„bis“ liegt vor „von“.','err');return;}
+  const me=USERS[CU];
+  const ok=await urMutate(d=>{
+    const r=urRow(d,i);
+    if(!r.ant||r.gf||r.nicht||r.storno||r.stornoReq)return false;
+    if(!(urIsFinal(me)||(urIsPL(d)&&!r.pl&&!r.gen)))return false;
+    const old={von:r.von,bis:r.bis,tage:r.tage};
+    r.von=von;r.bis=bis;r.tage=t;
+    r.log=(r.log||[]).concat([{by:CU,at:new Date().toISOString(),action:'edited',old:old}]);
+    if(r.pl||r.gen||r.vert){                                   // reset confirmations
+      delete r.pl;delete r.gen;delete r.vert;
+      const ow=USERS[d.employeeName]||{};
+      if(['pl','admin_pl'].includes(ow.role))delete r.ant;     // a PL's own form: he has to confirm again
+    }
+  });
+  if(!ok)toast('Nicht möglich.','err');
+  UR.editRow=null;urRender();
 }
 async function urPL(i){if(CU===UR.name){return;}await urMutate(d=>{const r=urRow(d,i);if(!r.ant||r.pl||r.gen||r.nicht||r.storno)return false;r.pl=urStamp(CU);r.gen=urStamp(CU);});urRender();}   // PL confirmation = approved
 async function urReject(i){
